@@ -10,7 +10,12 @@ export function billFromOrder(
     kitchen_status?: string;
     vat_rate?: number | null;
   }[],
-  rates: { vat_rate: number; vat_included: boolean; service_rate: number; cash_round_to: number },
+  rates: {
+    vat_rate: number;
+    vat_included: boolean;
+    service_rate: number;
+    cash_round_to: number;
+  },
   discount = 0,
 ): Bill {
   return computeBill({
@@ -24,8 +29,8 @@ export function billFromOrder(
 }
 
 export function clampQty(n: unknown): number | null {
-  const q = Math.floor(Number(n));
-  if (!Number.isFinite(q) || q < 1 || q > 99) return null;
+  const q = Number(n);
+  if (typeof n === "boolean" || n == null || !Number.isInteger(q) || q < 1 || q > 99) return null;
   return q;
 }
 

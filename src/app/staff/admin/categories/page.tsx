@@ -1,5 +1,6 @@
 "use client";
 
+import { staffResponseOk } from "@/lib/staffClient";
 import { StaffNav } from "@/components/staff/Nav";
 import type { Category, MenuItem, Tenant } from "@/lib/types";
 import Link from "next/link";
@@ -19,6 +20,7 @@ export default function AdminCategories() {
 
   async function load() {
     const res = await fetch("/api/staff/admin?section=menu", { cache: "no-store" });
+    if (!staffResponseOk(res)) return;
     if (res.status === 401) {
       router.replace("/staff");
       return;
@@ -133,7 +135,11 @@ export default function AdminCategories() {
           </article>
         );
       })}
-      {msg && <p className="muted" style={{ padding: "0 16px" }}>{msg}</p>}
+      {msg && (
+        <p className="muted" style={{ padding: "0 16px" }}>
+          {msg}
+        </p>
+      )}
 
       {pending && (
         <div className="modal-back" onClick={() => setPending(null)}>

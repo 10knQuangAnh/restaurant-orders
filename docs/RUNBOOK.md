@@ -15,6 +15,10 @@ Last verified: 2026-11-23 · Scope: operate a venue
 `npm run seed:demo` refused in production. Never put PINs in UI or README.
 Empty hosted Postgres: `POST /api/platform/seed` with `x-platform-secret` (409 if tenants already exist). Local PGlite seeds on first boot.
 
+Production requires a valid PostgreSQL URL (`DATABASE_URL`, `POSTGRES_URL` or `POSTGRES_PRISMA_URL`). It no longer falls back to memory when configuration is missing/invalid; `/api/readyz` returns 503. Automatic demo seeding in production is disabled by default; `SEED_DEMO=1` explicitly enables it on an empty DB. Existing data is preserved.
+
+After deploying this audit's changes, verify readiness, staff login and a test order in a test venue. Order mutations acquire a short tenant row lock inside the transaction to serialize conflicting open/pay/transfer/split/kitchen actions; load testing for very large venues remains separate from functional testing.
+
 ## New restaurant from JSON
 Template: `seeds/templates/quan-sample.json` (slug, PIN, tables, categories, items). Copy and edit.
 

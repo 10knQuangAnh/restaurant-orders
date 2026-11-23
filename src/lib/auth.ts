@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { sql } from "./db";
+import { sql, withTx } from "./db";
 import { json } from "./http";
 import { nid } from "./ids";
 import { STAFF_COOKIE } from "./cookies";
@@ -13,7 +13,10 @@ export type StaffContext = Staff & { tenant_id: string; session_id: string };
 
 function cookieToken(request: Request): string | undefined {
   const raw = request.headers.get("cookie") || "";
-  const hit = raw.split(";").map((p) => p.trim()).find((p) => p.startsWith(`${STAFF_COOKIE}=`));
+  const hit = raw
+    .split(";")
+    .map((p) => p.trim())
+    .find((p) => p.startsWith(`${STAFF_COOKIE}=`));
   return hit?.slice(STAFF_COOKIE.length + 1);
 }
 
@@ -53,66 +56,64 @@ export async function loginWithPin(opts: {
   const tenant = tenants[0];
   if (!tenant) return { error: "unknown_tenant", status: 404 };
 
-  const people = await sql<{
-    id: string;
-    tenant_id: string;
-    name: string;
-    role: Role;
-    pin: string;
-    pin_hash: string | null;
-    failed_attempts: number;
-    locked_until: string | null;
-    active: boolean;
-  }>(
-    `select id, tenant_id, name, role, pin, pin_hash, failed_attempts, locked_until, active
-     from staff where id = $1 and tenant_id = $2`,
-    [opts.staffId, tenant.id],
-  );
-  const person = people[0];
-  if (!person || !person.active) return { error: "unknown_staff", status: 404 };
+  return withTx(async (q) => {
+    const people = await q<{
+      id: string;
+      tenant_id: string;
+      name: string;
+      role: Role;
+      pin: string;
+      pin_hash: string | null;
+      failed_attempts: number;
+      locked_until: string | null;
+      active: boolean;
+    }>(
+      `select id, tenant_id, name, role, pin, pin_hash, failed_attempts, locked_until, active
+     from staff where id = $1 and tenant_id = $2 for update`,
+      [opts.staffId, tenant.id],
+    );
+    const person = people[0];
+    if (!person || !person.active) return { error: "unknown_staff", status: 404 };
 
-  if (person.locked_until && new Date(person.locked_until).getTime() > Date.now()) {
-    return { error: "locked", status: 429 };
-  }
+    if (person.locked_until && new Date(person.locked_until).getTime() > Date.now()) {
+      return { error: "locked", status: 429 };
+    }
 
-  let ok = false;
-  if (person.pin_hash) ok = verifyPin(pin, person.pin_hash);
-  else ok = person.pin === pin;
-  if (!ok) {
-    const next = Number(person.failed_attempts || 0) + 1;
-    const locked = next >= LOCK_AFTER ? new Date(Date.now() + LOCK_MS).toISOString() : null;
-    await sql(`update staff set failed_attempts = $1, locked_until = $2 where id = $3`, [
-      next,
-      locked,
-      person.id,
-    ]);
-    return { error: "bad_pin", status: 401 };
-  }
+    let ok = false;
+    if (person.pin_hash) ok = verifyPin(pin, person.pin_hash);
+    else ok = person.pin === pin;
+    if (!ok) {
+      const next = Number(person.failed_attempts || 0) + 1;
+      const locked = next >= LOCK_AFTER ? new Date(Date.now() + LOCK_MS).toISOString() : null;
+      await q(`update staff set failed_attempts = $1, locked_until = $2 where id = $3`, [next, locked, person.id]);
+      return { error: "bad_pin", status: 401 };
+    }
 
-  if (!person.pin_hash) {
-    await sql(`update staff set pin_hash = $1 where id = $2`, [hashPin(pin), person.id]);
-  }
-  await sql(`update staff set failed_attempts = 0, locked_until = null where id = $1`, [person.id]);
+    if (!person.pin_hash) {
+      await q(`update staff set pin_hash = $1 where id = $2`, [hashPin(pin), person.id]);
+    }
+    await q(`update staff set failed_attempts = 0, locked_until = null where id = $1`, [person.id]);
 
-  const token = newSessionToken();
-  const sessionId = nid("ses");
-  await sql(
-    `insert into staff_sessions (id, staff_id, token, expires_at)
+    const token = newSessionToken();
+    const sessionId = nid("ses");
+    await q(
+      `insert into staff_sessions (id, staff_id, token, expires_at)
      values ($1,$2,$3, now() + interval '12 hours')`,
-    [sessionId, person.id, hashToken(token)],
-  );
-  return {
-    token,
-    staff: {
-      session_id: sessionId,
-      id: person.id,
-      tenant_id: person.tenant_id,
-      name: person.name,
-      role: person.role,
-      identity_email: null,
-      active: true,
-    },
-  };
+      [sessionId, person.id, hashToken(token)],
+    );
+    return {
+      token,
+      staff: {
+        session_id: sessionId,
+        id: person.id,
+        tenant_id: person.tenant_id,
+        name: person.name,
+        role: person.role,
+        identity_email: null,
+        active: true,
+      },
+    };
+  });
 }
 
 export async function logoutSession(request: Request): Promise<void> {

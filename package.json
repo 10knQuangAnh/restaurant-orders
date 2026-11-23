@@ -11,7 +11,12 @@
     "seed:demo": "node scripts/seed-demo.mjs",
     "seed:tenant": "node --experimental-strip-types scripts/seed-tenant.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:probe": "node tests/probe-audit.mjs"
+    "test:probe": "node tests/probe-audit.mjs",
+    "test:ops": "node tests/ops-flow.mjs",
+    "test:regression": "node tests/regression-flow.mjs",
+    "test:browser": "node tests/browser-flow.mjs",
+    "test:database": "node tests/database-flow.mjs",
+    "test:platform": "node tests/platform-flow.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",
@@ -27,6 +32,10 @@
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "playwright": "^1.65.1",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "postcss": "^8.5.33"
   }
 }

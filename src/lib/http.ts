@@ -22,7 +22,9 @@ export function json(data: unknown, status = 200, extra: HeadersInit = {}) {
 
 export async function readBody<T>(request: Request): Promise<T> {
   try {
-    return (await request.json()) as T;
+    const body = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("object_required");
+    return body as T;
   } catch {
     throw new ApiError(400, "bad_json");
   }
@@ -34,12 +36,7 @@ function portOf(u: URL): string {
 
 function loopbackEquivalent(a: URL, b: URL): boolean {
   const loopback = new Set(["localhost", "127.0.0.1", "::1"]);
-  return (
-    a.protocol === b.protocol &&
-    portOf(a) === portOf(b) &&
-    loopback.has(a.hostname) &&
-    loopback.has(b.hostname)
-  );
+  return a.protocol === b.protocol && portOf(a) === portOf(b) && loopback.has(a.hostname) && loopback.has(b.hostname);
 }
 
 export function assertSameOrigin(request: Request): void {
@@ -81,11 +78,7 @@ export function wrap(handler: (request: Request, ctx?: unknown) => Promise<Respo
   };
 }
 
-export function featureOn(
-  features: Record<string, boolean> | null | undefined,
-  key: string,
-  fallback = true,
-): boolean {
+export function featureOn(features: Record<string, boolean> | null | undefined, key: string, fallback = true): boolean {
   if (!features || typeof features[key] === "undefined") return fallback;
   return features[key] !== false;
 }

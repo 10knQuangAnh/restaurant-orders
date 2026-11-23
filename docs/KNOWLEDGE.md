@@ -20,3 +20,10 @@ Last verified: 2026-11-23 · Scope: bugs already paid for
 | publish-app refuses | Needs commit **and** origin push | User pushes; agent does not wait on GitHub MCP | — |
 | QR PNG link says localhost | Next `request.url` origin is localhost | Use `Host` / `x-forwarded-host` | tables page |
 | Món đã gọi blank after Gỡ last line | empty copy keyed off `items.length` including cancelled | Filter live lines | guest ordered |
+
+# Audit fixes — 2026-11-23
+
+- Production `npm run build` failed only when PostgreSQL was configured: migration filter referenced loop variable `file` before initialization. Use filter parameter `f`; `test:database` runs migration CLI twice.
+- Serverless instances could wait indefinitely on migration: runtime returned a connection holding `pg_advisory_lock` to its pool. Explicitly unlock in `finally` before releasing the client; test lock availability after boot.
+- API success in isolated unit tests did not cover concurrent request races. Reproduce on disposable PostgreSQL; stock reservation, kitchen/cancellation/payment and failed-PIN updates must validate under transaction locks.
+- Do not run mutation suites concurrently on shared demo fixtures: an operations test can pay the order another probe is inspecting. Run suites sequentially and generate separate tables.

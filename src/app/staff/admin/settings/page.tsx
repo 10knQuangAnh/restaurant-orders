@@ -1,5 +1,6 @@
 "use client";
 
+import { staffResponseOk } from "@/lib/staffClient";
 import { StaffNav } from "@/components/staff/Nav";
 import { useEffect, useState } from "react";
 
@@ -27,12 +28,19 @@ const FLAGS = [
 ] as const;
 
 export default function AdminSettings() {
-  const [tenant, setTenant] = useState({ name: "", phone: "", address: "", primary_color: "#E85D04", accent_color: "#FFF1E6" });
+  const [tenant, setTenant] = useState({
+    name: "",
+    phone: "",
+    address: "",
+    primary_color: "#E85D04",
+    accent_color: "#FFF1E6",
+  });
   const [s, setS] = useState<Settings | null>(null);
 
   useEffect(() => {
     void (async () => {
       const res = await fetch("/api/staff/admin?section=settings", { cache: "no-store" });
+      if (!staffResponseOk(res)) return;
       const data = (await res.json()) as { tenant: typeof tenant; settings: Settings };
       setTenant({
         name: data.tenant.name,
@@ -74,18 +82,29 @@ export default function AdminSettings() {
     });
   }
 
-  if (!s) return <main className="admin" style={{ padding: 24 }}>Đang tải…</main>;
+  if (!s)
+    return (
+      <main className="admin" style={{ padding: 24 }}>
+        Đang tải…
+      </main>
+    );
 
   return (
     <main className="admin" style={{ paddingBottom: 90 }}>
-      <header className="staff-top"><h1>Cấu hình</h1></header>
+      <header className="staff-top">
+        <h1>Cấu hình</h1>
+      </header>
       <section className="admin-card">
         <b>Nhận diện quán</b>
         <input value={tenant.name} onChange={(e) => setTenant({ ...tenant, name: e.target.value })} />
         <input value={tenant.phone} onChange={(e) => setTenant({ ...tenant, phone: e.target.value })} />
         <input value={tenant.address} onChange={(e) => setTenant({ ...tenant, address: e.target.value })} />
         <label className="muted">Màu chính</label>
-        <input type="color" value={tenant.primary_color} onChange={(e) => setTenant({ ...tenant, primary_color: e.target.value })} />
+        <input
+          type="color"
+          value={tenant.primary_color}
+          onChange={(e) => setTenant({ ...tenant, primary_color: e.target.value })}
+        />
       </section>
       <section className="admin-card">
         <b>VAT & phí</b>
@@ -93,7 +112,11 @@ export default function AdminSettings() {
         <input value={s.vat_rate} onChange={(e) => setS({ ...s, vat_rate: Number(e.target.value) })} />
         <div className="switch-row">
           <span>Giá menu đã gồm VAT</span>
-          <input type="checkbox" checked={!!s.vat_included} onChange={(e) => setS({ ...s, vat_included: e.target.checked })} />
+          <input
+            type="checkbox"
+            checked={!!s.vat_included}
+            onChange={(e) => setS({ ...s, vat_included: e.target.checked })}
+          />
         </div>
         <label className="muted">Phí phục vụ</label>
         <input value={s.service_rate} onChange={(e) => setS({ ...s, service_rate: Number(e.target.value) })} />
@@ -102,9 +125,21 @@ export default function AdminSettings() {
       </section>
       <section className="admin-card">
         <b>Chuyển khoản</b>
-        <input placeholder="Ngân hàng" value={s.bank_name || ""} onChange={(e) => setS({ ...s, bank_name: e.target.value })} />
-        <input placeholder="Số TK" value={s.bank_account || ""} onChange={(e) => setS({ ...s, bank_account: e.target.value })} />
-        <input placeholder="Chủ TK" value={s.bank_holder || ""} onChange={(e) => setS({ ...s, bank_holder: e.target.value })} />
+        <input
+          placeholder="Ngân hàng"
+          value={s.bank_name || ""}
+          onChange={(e) => setS({ ...s, bank_name: e.target.value })}
+        />
+        <input
+          placeholder="Số TK"
+          value={s.bank_account || ""}
+          onChange={(e) => setS({ ...s, bank_account: e.target.value })}
+        />
+        <input
+          placeholder="Chủ TK"
+          value={s.bank_holder || ""}
+          onChange={(e) => setS({ ...s, bank_holder: e.target.value })}
+        />
       </section>
       <section className="admin-card">
         <b>Cờ chức năng</b>
@@ -120,7 +155,9 @@ export default function AdminSettings() {
         ))}
       </section>
       <div style={{ padding: "0 12px" }}>
-        <button className="cta" onClick={() => void save()}>Lưu cấu hình</button>
+        <button className="cta" onClick={() => void save()}>
+          Lưu cấu hình
+        </button>
       </div>
       <StaffNav role="admin" />
     </main>

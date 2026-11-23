@@ -50,36 +50,42 @@ export default function CartPage() {
 
   function setQty(idx: number, qty: number) {
     const next = [...lines];
-    next[idx] = { ...next[idx], qty };
+    next[idx] = { ...next[idx], qty: Math.min(99, qty) };
     const cleaned = next.filter((l) => l.qty > 0);
     writeCart(token, cleaned);
     setLines(cleaned);
   }
 
   async function confirm() {
-    if (lines.length === 0) return;
+    if (busy || lines.length === 0) return;
     setBusy(true);
     setErr("");
-    const res = await fetch(`/api/public/table/${token}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        action: "order",
-        items: lines.map((l) => ({ itemId: l.itemId, unitId: l.unitId, qty: l.qty, note: l.note })),
-        guestName: guest.name,
-        guestPhone: guest.phone,
-        note,
-      }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setErr(body.error === "sold_out" ? "Có món vừa hết. Vui lòng chọn lại." : "Không gửi được order.");
-      return;
+    try {
+      const res = await fetch(`/api/public/table/${token}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "order",
+          items: lines.map((l) => ({ itemId: l.itemId, unitId: l.unitId, qty: l.qty, note: l.note })),
+          guestName: guest.name,
+          guestPhone: guest.phone,
+          note,
+        }),
+      });
+      setBusy(false);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setErr(body.error === "sold_out" ? "Có món vừa hết. Vui lòng chọn lại." : "Không gửi được order.");
+        return;
+      }
+      localStorage.removeItem(cartKey(token));
+      setLines([]);
+      setOk(true);
+    } catch {
+      setErr("Không kết nối được. Giỏ hàng vẫn được giữ để bạn thử lại.");
+    } finally {
+      setBusy(false);
     }
-    localStorage.removeItem(cartKey(token));
-    setLines([]);
-    setOk(true);
   }
 
   const count = cartCount(lines);
@@ -125,7 +131,10 @@ export default function CartPage() {
               <div className="row-between">
                 <strong>{l.name}</strong>
               </div>
-              <div className="muted">{l.unitName}{l.note ? ` · ${l.note}` : ""}</div>
+              <div className="muted">
+                {l.unitName}
+                {l.note ? ` · ${l.note}` : ""}
+              </div>
               <div className="row-between" style={{ marginTop: 8 }}>
                 <span className="price">{formatVnd(l.price)}</span>
                 <div className="qty-row" style={{ margin: 0, gap: 10 }}>
@@ -157,9 +166,7 @@ export default function CartPage() {
 
       <div className="confirm-dock">
         <div className="row-between" style={{ marginBottom: 10 }}>
-          <span>
-            Tổng tiền ({count} món)
-          </span>
+          <span>Tổng tiền ({count} món)</span>
           <strong>{formatVnd(total)}</strong>
         </div>
         {err && <p style={{ color: "#dc2626" }}>{err}</p>}
@@ -172,8 +179,18 @@ export default function CartPage() {
         <div className="modal-back" onClick={() => setGuestOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ textAlign: "left" }}>
             <h2>Thông tin của bạn</h2>
-            <input className="field" placeholder="Tên" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
-            <input className="field" placeholder="Số điện thoại" value={guest.phone} onChange={(e) => setGuest({ ...guest, phone: e.target.value })} />
+            <input
+              className="field"
+              placeholder="Tên"
+              value={guest.name}
+              onChange={(e) => setGuest({ ...guest, name: e.target.value })}
+            />
+            <input
+              className="field"
+              placeholder="Số điện thoại"
+              value={guest.phone}
+              onChange={(e) => setGuest({ ...guest, phone: e.target.value })}
+            />
             <button
               className="cta"
               style={{ marginTop: 14 }}
@@ -200,7 +217,9 @@ export default function CartPage() {
           </div>
         </div>
       )}
-      <span className="hidden">{table?.code} {tenant?.name}</span>
+      <span className="hidden">
+        {table?.code} {tenant?.name}
+      </span>
     </main>
   );
 }

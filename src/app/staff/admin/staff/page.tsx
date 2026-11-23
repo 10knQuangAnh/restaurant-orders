@@ -1,5 +1,6 @@
 "use client";
 
+import { staffResponseOk } from "@/lib/staffClient";
 import { StaffNav } from "@/components/staff/Nav";
 import { useEffect, useState } from "react";
 
@@ -12,6 +13,7 @@ export default function AdminStaff() {
 
   async function load() {
     const res = await fetch("/api/staff/admin?section=staff", { cache: "no-store" });
+    if (!staffResponseOk(res)) return;
     setPeople(((await res.json()) as { people: Person[] }).people);
   }
   useEffect(() => {
@@ -20,11 +22,17 @@ export default function AdminStaff() {
 
   return (
     <main className="admin" style={{ paddingBottom: 90 }}>
-      <header className="staff-top"><h1>Nhân viên</h1></header>
+      <header className="staff-top">
+        <h1>Nhân viên</h1>
+      </header>
       <section className="admin-card">
         <b>Thêm ca</b>
         <input placeholder="Tên" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <input placeholder="PIN mới (4–8 số)" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
+        <input
+          placeholder="PIN mới (4–8 số)"
+          value={form.pin}
+          onChange={(e) => setForm({ ...form, pin: e.target.value })}
+        />
         <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
           <option value="admin">Admin</option>
           <option value="waiter">Nhân viên bàn</option>
@@ -54,7 +62,10 @@ export default function AdminStaff() {
           <div className="row-between">
             <div>
               <strong>{p.name}</strong>
-              <div className="muted">{p.role}{p.active ? "" : " · nghỉ"}</div>
+              <div className="muted">
+                {p.role}
+                {p.active ? "" : " · nghỉ"}
+              </div>
             </div>
             <button
               className="linkish"

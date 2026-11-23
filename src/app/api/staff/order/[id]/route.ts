@@ -1,9 +1,17 @@
 import { requireStaff } from "@/lib/auth";
 import { billFromOrder, clampQty } from "@/lib/billing";
-import { sql, withTx } from "@/lib/db";
+import { sql, withTx, type QueryFn } from "@/lib/db";
 import { ApiError, featureOn, json, readBody, wrap } from "@/lib/http";
 import { nid } from "@/lib/ids";
-import { clearTableSession, openOrderForTable, pushNotice, rateForItem, restoreItemStock, tenantBundle, writeAudit } from "@/lib/queries";
+import {
+  clearTableSession,
+  pushNotice,
+  rateForItem,
+  restoreItemStock,
+  reserveItemStock,
+  tenantBundle,
+  writeAudit,
+} from "@/lib/queries";
 import type { OrderItem } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -40,8 +48,8 @@ type PatchBody = {
   idempotencyKey?: string;
 };
 
-async function loadTicket(orderId: string, tenantId: string) {
-  const orders = await sql<{
+async function loadTicket(orderId: string, tenantId: string, q: QueryFn = sql) {
+  const orders = await q<{
     id: string;
     tenant_id: string;
     table_id: string;
@@ -68,13 +76,13 @@ async function loadTicket(orderId: string, tenantId: string) {
   );
   const order = orders[0];
   if (!order) return null;
-  const items = await sql<OrderItem>(
+  const items = await q<OrderItem>(
     `select id, order_id, item_id, unit_id, name_snapshot, unit_snapshot, unit_price_dong, qty, note,
             rush, complementary, kitchen_status, sent_at, started_at, done_at, created_at, vat_rate, original_price_dong
      from order_items where order_id = $1 order by created_at`,
     [orderId],
   );
-  const payments = await sql<{
+  const payments = await q<{
     id: string;
     method: string;
     amount_dong: number;
@@ -119,7 +127,13 @@ export const GET = wrap(async (request: Request, ctx) => {
           orderRates(ticket.order, Number(bundle?.settings?.cash_round_to ?? 0)),
           Number(ticket.order.discount_dong),
         );
-  return json({ staff, tenant: bundle?.tenant, settings: bundle?.settings, ticket, bill });
+  return json({
+    staff,
+    tenant: bundle?.tenant,
+    settings: bundle?.settings,
+    ticket,
+    bill,
+  });
 });
 
 export const POST = wrap(async (request: Request, ctx) => {
@@ -127,6 +141,22 @@ export const POST = wrap(async (request: Request, ctx) => {
   if (staff instanceof Response) return staff;
   const { id } = await (ctx as { params: Promise<{ id: string }> }).params;
   const body = await readBody<PatchBody>(request);
+  if (
+    ![
+      "open",
+      "ack_call",
+      "pay",
+      "discount",
+      "served",
+      "add",
+      "patch_item",
+      "transfer",
+      "merge",
+      "split",
+      "void",
+    ].includes(body.action)
+  )
+    throw new ApiError(400, "bad_action");
   const bundle = await tenantBundle(staff.tenant_id);
   if (!bundle?.settings) return json({ error: "no_tenant" }, 400);
   const settings = bundle.settings;
@@ -139,13 +169,20 @@ export const POST = wrap(async (request: Request, ctx) => {
       [body.tableId, staff.tenant_id],
     );
     if (!tables[0]) return json({ error: "not_found" }, 404);
-    const existing = await openOrderForTable(body.tableId, staff.tenant_id);
-    if (existing) return json({ orderId: existing.order.id });
-    const orderId = nid("ord");
-    try {
-      await sql(
-        `insert into orders (id, tenant_id, table_id, status, guest_name, vat_rate, vat_included, service_rate)
-         values ($1,$2,$3,'open',$4,$5,$6,$7)`,
+    return withTx(async (q) => {
+      await q(`select id from tenants where id = $1 for update`, [staff.tenant_id]);
+      await q(`select id from dining_tables where id = $1 and tenant_id = $2 for update`, [
+        body.tableId,
+        staff.tenant_id,
+      ]);
+      const existing = await q<{ id: string }>(
+        `select id from orders where table_id = $1 and tenant_id = $2 and status = 'open'`,
+        [body.tableId, staff.tenant_id],
+      );
+      if (existing[0]) return json({ orderId: existing[0].id });
+      const orderId = nid("ord");
+      await q(
+        `insert into orders (id, tenant_id, table_id, status, guest_name, vat_rate, vat_included, service_rate) values ($1,$2,$3,'open',$4,$5,$6,$7)`,
         [
           orderId,
           staff.tenant_id,
@@ -156,12 +193,8 @@ export const POST = wrap(async (request: Request, ctx) => {
           settings.service_rate,
         ],
       );
-    } catch {
-      const race = await openOrderForTable(body.tableId, staff.tenant_id);
-      if (race) return json({ orderId: race.order.id });
-      throw new ApiError(409, "open_conflict");
-    }
-    return json({ orderId });
+      return json({ orderId });
+    });
   }
 
   if (body.action === "ack_call") {
@@ -173,48 +206,53 @@ export const POST = wrap(async (request: Request, ctx) => {
     return json({ ok: true });
   }
 
-  const ticket = await loadTicket(id, staff.tenant_id);
-  if (!ticket) return json({ error: "not_found" }, 404);
+  return withTx(async (q) => {
+    await q(`select id from tenants where id = $1 for update`, [staff.tenant_id]);
+    const locked = await q<{ id: string }>(`select id from orders where id = $1 and tenant_id = $2 for update`, [
+      id,
+      staff.tenant_id,
+    ]);
+    if (!locked[0]) throw new ApiError(404, "not_found");
+    const ticket = await loadTicket(id, staff.tenant_id, q);
+    if (!ticket) throw new ApiError(404, "not_found");
+    if (ticket.order.status !== "open") throw new ApiError(409, "not_open");
 
-  if (body.action === "pay") {
-    return withTx(async (q) => {
-      const locked = await q<{ id: string; status: string; discount_dong: number; vat_rate: number; vat_included: boolean; service_rate: number; table_id: string }>(
-        `select id, status, discount_dong, vat_rate, vat_included, service_rate, table_id from orders where id = $1 and tenant_id = $2 for update`,
-        [id, staff.tenant_id],
-      );
-      const order = locked[0];
-      if (!order) throw new ApiError(404, "not_found");
-      if (order.status !== "open") throw new ApiError(409, "not_open");
-      const items = await q<OrderItem>(
-        `select * from order_items where order_id = $1`,
-        [id],
-      );
+    if (body.action === "pay") {
+      if (body.method != null && !["cash", "transfer"].includes(body.method)) throw new ApiError(400, "bad_method");
+      const method = body.method || "cash";
       const bill = billFromOrder(
-        items.map((i) => ({
+        ticket.items.map((i) => ({
           ...i,
-          unit_price_dong: Number(i.unit_price_dong),
           qty: Number(i.qty),
+          unit_price_dong: Number(i.unit_price_dong),
           vat_rate: i.vat_rate == null ? null : Number(i.vat_rate),
         })),
-        orderRates(order, Number(settings.cash_round_to ?? 0)),
-        Number(order.discount_dong),
+        orderRates(ticket.order, Number(settings.cash_round_to ?? 0)),
+        Number(ticket.order.discount_dong),
       );
-      const method = body.method || "cash";
-      const amount = bill.total;
+      const amount = method === "cash" ? bill.cashTotal : bill.total;
       const rounding = method === "cash" ? bill.rounding : 0;
-      const key = body.idempotencyKey || `pay:${id}`;
-      const dup = await q<{ id: string }>(`select id from payments where order_id = $1 limit 1`, [id]);
-      if (dup[0]) throw new ApiError(409, "already_paid");
+      const received = body.received ?? amount;
+      if (!Number.isSafeInteger(received) || received < amount) throw new ApiError(400, "insufficient_cash");
+      const dup = await q(`select id from payments where order_id = $1`, [id]);
+      if (dup.length) throw new ApiError(409, "already_paid");
       await q(
         `insert into payments (id, order_id, method, amount_dong, received_dong, rounding_dong, staff_id, idempotency_key)
-         values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [nid("pay"), id, method, amount, body.received ?? amount, rounding, staff.id, key],
+        values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [nid("pay"), id, method, amount, received, rounding, staff.id, body.idempotencyKey || `pay:${id}`],
       );
-      await q(
-        `update orders set status = 'paid', closed_at = now(), bill_snapshot = $2::jsonb where id = $1`,
-        [id, JSON.stringify({ ...bill, method, staff_id: staff.id, paid_at: new Date().toISOString() })],
-      );
-      await clearTableSession(q, staff.tenant_id, order.table_id);
+      await q(`update orders set status = 'paid', closed_at = now(), bill_snapshot = $2::jsonb where id = $1`, [
+        id,
+        JSON.stringify({
+          ...bill,
+          total: amount,
+          rounding,
+          method,
+          staff_id: staff.id,
+          paid_at: new Date().toISOString(),
+        }),
+      ]);
+      await clearTableSession(q, staff.tenant_id, ticket.order.table_id);
       await writeAudit(q, {
         tenantId: staff.tenant_id,
         staffId: staff.id,
@@ -224,31 +262,27 @@ export const POST = wrap(async (request: Request, ctx) => {
         after: { amount, method },
       });
       return json({ ok: true, paid: amount, rounding, tableReset: true });
-    });
-  }
+    }
 
-  if (ticket.order.status !== "open") return json({ error: "closed" }, 409);
+    if (body.action === "discount") {
+      if (!Number.isSafeInteger(body.amount) || body.amount! < 0) throw new ApiError(400, "bad_amount");
+      if (body.amount! > 50_000 && staff.role !== "admin") throw new ApiError(403, "need_admin");
+      await q(`update orders set discount_dong = $1 where id = $2`, [body.amount, id]);
+    }
 
-  if (body.action === "discount") {
-    const amount = Math.max(0, Math.floor(Number(body.amount) || 0));
-    if (amount > 50_000 && staff.role !== "admin") return json({ error: "need_admin" }, 403);
-    await sql(`update orders set discount_dong = $1 where id = $2 and tenant_id = $3 and status = 'open'`, [
-      amount,
-      id,
-      staff.tenant_id,
-    ]);
-  }
+    if (body.action === "served") {
+      const moved = await q(
+        `update order_items set kitchen_status = 'served' where id = $1 and order_id = $2 and kitchen_status = 'done' returning id`,
+        [body.itemId, id],
+      );
+      if (!moved.length) throw new ApiError(409, "bad_transition");
+    }
 
-  if (body.action === "served" && body.itemId) {
-    await sql(
-      `update order_items set kitchen_status = 'served' where id = $1 and order_id = $2 and kitchen_status = 'done'`,
-      [body.itemId, id],
-    );
-  }
-
-  if (body.action === "add" && body.items?.length) {
-    await withTx(async (q) => {
-      for (const line of body.items!) {
+    if (body.action === "add") {
+      if (!Array.isArray(body.items) || !body.items.length || body.items.length > 100) throw new ApiError(400, "empty");
+      for (const line of [...body.items].sort((a, b) => String(a?.itemId).localeCompare(String(b?.itemId)))) {
+        if (!line || typeof line !== "object" || (line.note != null && typeof line.note !== "string"))
+          throw new ApiError(400, "bad_item");
         const qty = clampQty(line.qty);
         if (qty == null) throw new ApiError(400, "bad_qty");
         const units = await q<{
@@ -257,54 +291,49 @@ export const POST = wrap(async (request: Request, ctx) => {
           name: string;
           price_dong: number;
           item_name: string;
-          active: boolean;
-          sold_out: boolean;
-          stock_left: number | null;
           tax_category: string;
         }>(
-          `select u.id, u.item_id, u.name, u.price_dong, i.name as item_name, i.active, i.sold_out, i.stock_left, i.tax_category
-           from item_units u join items i on i.id = u.item_id
-           where u.id = $1 and i.tenant_id = $2`,
-          [line.unitId, staff.tenant_id],
+          `select u.id, u.item_id, u.name, u.price_dong, i.name as item_name, i.tax_category from item_units u join items i on i.id = u.item_id
+           where u.id = $1 and i.id = $2 and i.tenant_id = $3`,
+          [line.unitId, line.itemId, staff.tenant_id],
         );
         const u = units[0];
         if (!u) throw new ApiError(404, "bad_item");
-        if (!u.active || u.sold_out) throw new ApiError(409, "sold_out");
-        if (u.stock_left != null && Number(u.stock_left) < qty) throw new ApiError(409, "sold_out");
+        await reserveItemStock(q, staff.tenant_id, u.item_id, qty);
         const vat = await rateForItem(q, staff.tenant_id, u.tax_category || "food", Number(ticket.order.vat_rate));
         await q(
           `insert into order_items (id, order_id, item_id, unit_id, name_snapshot, unit_snapshot, unit_price_dong, original_price_dong, qty, note, kitchen_status, sent_at, vat_rate)
-           values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,'queued', now(), $10)`,
-          [nid("oi"), id, u.item_id, u.id, u.item_name, u.name, u.price_dong, qty, line.note || null, vat],
-        );
-        if (u.stock_left != null) {
-          await q(`update items set stock_left = stock_left - $1, sold_out = (stock_left - $1) <= 0 where id = $2 and tenant_id = $3`, [
-            qty,
+          values ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,'queued',now(),$10)`,
+          [
+            nid("oi"),
+            id,
             u.item_id,
-            staff.tenant_id,
-          ]);
-        }
+            u.id,
+            u.item_name,
+            u.name,
+            u.price_dong,
+            qty,
+            line.note?.slice(0, 255) || null,
+            vat,
+          ],
+        );
       }
-    });
-  }
+    }
 
-  if (body.action === "patch_item" && body.itemId) {
-    const lines = ticket.items.filter((i) => i.id === body.itemId);
-    const line = lines[0];
-    if (!line) return json({ error: "not_found" }, 404);
-    if (body.cancel) {
-      const reason = String(body.cancelReason || "").trim().slice(0, 80);
-      if (reason.length < 2) return json({ error: "need_reason" }, 400);
-      if (line.kitchen_status === "done" || line.kitchen_status === "served") {
-        if (staff.role !== "admin") return json({ error: "need_admin" }, 403);
-      }
-      if (line.kitchen_status === "cancelled" || line.kitchen_status === "86") {
-        return json({ error: "already_closed" }, 409);
-      }
-      await withTx(async (q) => {
+    if (body.action === "patch_item") {
+      const line = ticket.items.find((i) => i.id === body.itemId);
+      if (!line) throw new ApiError(404, "not_found");
+      if (["cancelled", "86"].includes(line.kitchen_status)) throw new ApiError(409, "already_closed");
+      if (body.cancel) {
+        const reason = String(body.cancelReason || "")
+          .trim()
+          .slice(0, 80);
+        if (reason.length < 2) throw new ApiError(400, "need_reason");
+        if (["done", "served"].includes(line.kitchen_status) && staff.role !== "admin")
+          throw new ApiError(403, "need_admin");
         await q(
           `update order_items set kitchen_status = 'cancelled', cancel_reason = $3 where id = $1 and order_id = $2`,
-          [body.itemId, id, reason],
+          [line.id, id, reason],
         );
         await restoreItemStock(q, staff.tenant_id, line.item_id, Number(line.qty));
         await pushNotice(q, {
@@ -312,7 +341,7 @@ export const POST = wrap(async (request: Request, ctx) => {
           kind: "cancel",
           tableId: ticket.order.table_id,
           orderId: id,
-          itemId: body.itemId,
+          itemId: line.id,
           message: `Hủy món ${line.name_snapshot} · ${reason}`,
         });
         await writeAudit(q, {
@@ -320,129 +349,134 @@ export const POST = wrap(async (request: Request, ctx) => {
           staffId: staff.id,
           action: "cancel_line",
           entity: "order_item",
-          entityId: body.itemId,
+          entityId: line.id,
           after: { reason, kitchen_status: line.kitchen_status },
         });
-      });
-    } else {
-      const fields: string[] = [];
-      const params: unknown[] = [];
-      const add = (clause: string, value: unknown) => {
-        params.push(value);
-        fields.push(clause.replace("?", `$${params.length}`));
-      };
-      if (body.qty != null) {
-        const qty = Math.floor(Number(body.qty));
-        if (!Number.isFinite(qty) || qty < 0 || qty > 99) throw new ApiError(400, "bad_qty");
-        add("qty = ?", qty);
-      }
-      if (body.note != null) add("note = ?", String(body.note).slice(0, 255));
-      if (body.rush != null) add("rush = ?", body.rush);
-      if (body.complementary != null) {
-        if (!featureOn(features, "complementary")) throw new ApiError(403, "disabled");
-        add("complementary = ?", body.complementary);
-      }
-      if (fields.length) {
-        params.push(body.itemId, id);
-        await sql(
-          `update order_items set ${fields.join(", ")} where id = $${params.length - 1} and order_id = $${params.length}`,
-          params,
-        );
+      } else {
+        const fields: string[] = [];
+        const params: unknown[] = [];
+        const add = (field: string, value: unknown) => {
+          params.push(value);
+          fields.push(`${field} = $${params.length}`);
+        };
+        if (body.qty != null) {
+          const qty = clampQty(body.qty);
+          if (qty == null) throw new ApiError(400, "bad_qty");
+          const delta = qty - Number(line.qty);
+          if (delta > 0) await reserveItemStock(q, staff.tenant_id, line.item_id, delta);
+          if (delta < 0) await restoreItemStock(q, staff.tenant_id, line.item_id, -delta);
+          add("qty", qty);
+        }
+        if (body.note != null) add("note", String(body.note).slice(0, 255));
+        for (const field of ["rush", "complementary"] as const) {
+          if (body[field] != null) {
+            if (typeof body[field] !== "boolean") throw new ApiError(400, "bad_request");
+            if (field === "complementary" && !featureOn(features, "complementary")) throw new ApiError(403, "disabled");
+            add(field, body[field]);
+          }
+        }
+        if (fields.length) {
+          params.push(line.id, id);
+          await q(
+            `update order_items set ${fields.join(", ")} where id = $${params.length - 1} and order_id = $${params.length}`,
+            params,
+          );
+        }
       }
     }
-  }
 
-  if (body.action === "transfer" && body.tableId) {
-    if (!featureOn(features, "transfer_table")) return json({ error: "disabled" }, 403);
-    const destTable = await sql<{ id: string }>(
-      `select id from dining_tables where id = $1 and tenant_id = $2`,
-      [body.tableId, staff.tenant_id],
-    );
-    if (!destTable[0]) return json({ error: "not_found" }, 404);
-    const dest = await openOrderForTable(body.tableId, staff.tenant_id);
-    if (dest && dest.order.id !== id) {
-      await withTx(async (q) => {
-        await q(`update order_items set order_id = $1 where order_id = $2`, [dest.order.id, id]);
-        await q(`update orders set status = 'merged', closed_at = now(), merged_into = $2 where id = $1`, [
-          id,
-          dest.order.id,
-        ]);
-      });
-      return json({ orderId: dest.order.id, merged: true });
-    }
-    await sql(`update orders set table_id = $1 where id = $2 and tenant_id = $3`, [
-      body.tableId,
-      id,
-      staff.tenant_id,
-    ]);
-  }
-
-  if (body.action === "merge" && body.otherOrderId && body.otherOrderId !== id) {
-    const other = await loadTicket(body.otherOrderId, staff.tenant_id);
-    if (other && other.order.status === "open") {
-      await withTx(async (q) => {
-        await q(`update order_items set order_id = $1 where order_id = $2`, [id, body.otherOrderId]);
-        await q(`update orders set status = 'merged', closed_at = now(), merged_into = $2 where id = $1`, [
+    if (body.action === "transfer" || body.action === "merge" || body.action === "split") {
+      if (body.action === "transfer" && !featureOn(features, "transfer_table")) throw new ApiError(403, "disabled");
+      if (body.action === "split" && !featureOn(features, "split_bill")) throw new ApiError(403, "disabled");
+      if (body.action === "merge") {
+        if (!body.otherOrderId || body.otherOrderId === id) throw new ApiError(400, "bad_order");
+        const other = await q<{
+          id: string;
+          status: string;
+          discount_dong: number;
+        }>(`select id, status, discount_dong from orders where id = $1 and tenant_id = $2 for update`, [
           body.otherOrderId,
+          staff.tenant_id,
+        ]);
+        if (!other[0]) throw new ApiError(404, "not_found");
+        if (other[0].status !== "open") throw new ApiError(409, "not_open");
+        await q(`update order_items set order_id = $1 where order_id = $2`, [id, other[0].id]);
+        await q(`update orders set status = 'merged', closed_at = now(), merged_into = $2 where id = $1`, [
+          other[0].id,
           id,
         ]);
-      });
-    }
-  }
-
-  if (body.action === "split" && body.itemIds?.length) {
-    if (!featureOn(features, "split_bill")) return json({ error: "disabled" }, 403);
-    const newId = nid("ord");
-    const tableId = body.tableId || ticket.order.table_id;
-    const destTable = await sql<{ id: string }>(
-      `select id from dining_tables where id = $1 and tenant_id = $2`,
-      [tableId, staff.tenant_id],
-    );
-    if (!destTable[0]) return json({ error: "not_found" }, 404);
-    await withTx(async (q) => {
-      await q(
-        `insert into orders (id, tenant_id, table_id, status, vat_rate, vat_included, service_rate)
-         values ($1,$2,$3,'open',$4,$5,$6)`,
-        [
-          newId,
+        await q(`update orders set discount_dong = discount_dong + $1 where id = $2`, [other[0].discount_dong, id]);
+      } else {
+        if (!body.tableId) throw new ApiError(400, "need_table");
+        const table = await q(`select id from dining_tables where id = $1 and tenant_id = $2`, [
+          body.tableId,
           staff.tenant_id,
-          tableId,
-          ticket.order.vat_rate,
-          ticket.order.vat_included,
-          ticket.order.service_rate,
-        ],
-      );
-      for (const itemId of body.itemIds!) {
-        const moved = await q<{ id: string }>(
-          `update order_items set order_id = $1 where id = $2 and order_id = $3 returning id`,
-          [newId, itemId, id],
+        ]);
+        if (!table.length) throw new ApiError(404, "not_found");
+        if (body.tableId === ticket.order.table_id) throw new ApiError(409, "same_table");
+        const dest = await q<{ id: string; discount_dong: number }>(
+          `select id, discount_dong from orders where table_id = $1 and tenant_id = $2 and status = 'open' for update`,
+          [body.tableId, staff.tenant_id],
         );
-        if (!moved[0]) throw new ApiError(404, "not_found");
+        if (body.action === "split") {
+          if (dest.length) throw new ApiError(409, "table_busy");
+          if (!Array.isArray(body.itemIds) || !body.itemIds.length) throw new ApiError(400, "need_items");
+          const ids = [...new Set(body.itemIds)];
+          if (
+            ids.some(
+              (itemId) => !ticket.items.some((i) => i.id === itemId && !["cancelled", "86"].includes(i.kitchen_status)),
+            )
+          )
+            throw new ApiError(404, "not_found");
+          const newId = nid("ord");
+          await q(
+            `insert into orders (id, tenant_id, table_id, status, vat_rate, vat_included, service_rate) values ($1,$2,$3,'open',$4,$5,$6)`,
+            [
+              newId,
+              staff.tenant_id,
+              body.tableId,
+              ticket.order.vat_rate,
+              ticket.order.vat_included,
+              ticket.order.service_rate,
+            ],
+          );
+          for (const itemId of ids)
+            await q(`update order_items set order_id = $1 where id = $2 and order_id = $3`, [newId, itemId, id]);
+          return json({ orderId: newId, splitFrom: id });
+        }
+        if (dest[0]) {
+          await q(`update order_items set order_id = $1 where order_id = $2`, [dest[0].id, id]);
+          await q(`update orders set status = 'merged', closed_at = now(), merged_into = $2 where id = $1`, [
+            id,
+            dest[0].id,
+          ]);
+          await q(`update orders set discount_dong = discount_dong + $1 where id = $2`, [
+            ticket.order.discount_dong,
+            dest[0].id,
+          ]);
+          return json({ orderId: dest[0].id, merged: true });
+        }
+        await q(`update orders set table_id = $1 where id = $2`, [body.tableId, id]);
       }
-    });
-    return json({ orderId: newId, splitFrom: id });
-  }
+    }
 
-  if (body.action === "void") {
-    await withTx(async (q) => {
-      await q(`update orders set status = 'void', closed_at = now() where id = $1 and tenant_id = $2 and status = 'open'`, [
-        id,
-        staff.tenant_id,
-      ]);
+    if (body.action === "void") {
+      await q(`update orders set status = 'void', closed_at = now() where id = $1`, [id]);
       const live = await q<{ item_id: string; qty: number }>(
         `update order_items set kitchen_status = 'cancelled', cancel_reason = coalesce(cancel_reason, 'void')
-         where order_id = $1 and kitchen_status in ('queued','preparing')
-         returning item_id, qty`,
+        where order_id = $1 and kitchen_status in ('queued','preparing') returning item_id, qty`,
         [id],
       );
-      for (const row of live) {
-        await restoreItemStock(q, staff.tenant_id, row.item_id, Number(row.qty));
-      }
+      for (const row of live) await restoreItemStock(q, staff.tenant_id, row.item_id, Number(row.qty));
       await clearTableSession(q, staff.tenant_id, ticket.order.table_id);
-      await writeAudit(q, { tenantId: staff.tenant_id, staffId: staff.id, action: "void", entity: "order", entityId: id });
-    });
-  }
-
-  const next = await loadTicket(id, staff.tenant_id);
-  return json({ ok: true, ticket: next });
+      await writeAudit(q, {
+        tenantId: staff.tenant_id,
+        staffId: staff.id,
+        action: "void",
+        entity: "order",
+        entityId: id,
+      });
+    }
+    return json({ ok: true, ticket: await loadTicket(id, staff.tenant_id, q) });
+  });
 });

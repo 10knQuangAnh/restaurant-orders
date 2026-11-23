@@ -1,5 +1,6 @@
 "use client";
 
+import { staffResponseOk } from "@/lib/staffClient";
 import { StaffNav } from "@/components/staff/Nav";
 import { useEffect, useState } from "react";
 
@@ -18,6 +19,7 @@ export default function AdminTables() {
 
   async function load() {
     const res = await fetch("/api/staff/admin?section=tables", { cache: "no-store" });
+    if (!staffResponseOk(res)) return;
     const data = (await res.json()) as { tables: T[] };
     setTables(data.tables);
   }
@@ -40,7 +42,11 @@ export default function AdminTables() {
       <section className="admin-card no-print">
         <b>Thêm bàn</b>
         <input placeholder="Mã (T11)" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
-        <input placeholder="Tên (SÂN VƯỜN)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input
+          placeholder="Tên (SÂN VƯỜN)"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+        />
         <input placeholder="Khu" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} />
         <input placeholder="Số ghế" value={form.seats} onChange={(e) => setForm({ ...form, seats: e.target.value })} />
         <button
@@ -59,15 +65,21 @@ export default function AdminTables() {
           Tạo QR
         </button>
         <div className="kbtns" style={{ marginTop: 12 }}>
-          <button className="k-start" type="button" onClick={() => void downloadAll()}>Tải tất cả PNG</button>
-          <button className="k-start" type="button" onClick={() => window.print()}>In tờ QR</button>
+          <button className="k-start" type="button" onClick={() => void downloadAll()}>
+            Tải tất cả PNG
+          </button>
+          <button className="k-start" type="button" onClick={() => window.print()}>
+            In tờ QR
+          </button>
         </div>
       </section>
       <div className="qr-grid">
         {tables.map((t) => (
           <article className="admin-card qr-card" key={t.id} style={{ textAlign: "center" }}>
             <div className="row-between">
-              <strong>{t.code} · {t.name}</strong>
+              <strong>
+                {t.code} · {t.name}
+              </strong>
               <span className="muted">{t.seats} ghế</span>
             </div>
             <img src={t.qr} alt={`QR ${t.code}`} style={{ width: 180, margin: "12px auto" }} />

@@ -1,5 +1,6 @@
 "use client";
 
+import { staffResponseOk } from "@/lib/staffClient";
 import { StaffNav } from "@/components/staff/Nav";
 import { formatVnd } from "@/lib/money";
 import type { Category, MenuItem, Tenant } from "@/lib/types";
@@ -62,6 +63,7 @@ export default function AdminMenu() {
 
   async function load() {
     const res = await fetch("/api/staff/admin?section=menu", { cache: "no-store" });
+    if (!staffResponseOk(res)) return;
     if (res.status === 401) {
       router.replace("/staff");
       return;
@@ -88,11 +90,7 @@ export default function AdminMenu() {
     });
     const data = (await res.json()) as { error?: string; url?: string; itemId?: string };
     if (!res.ok) {
-      setMsg(
-        data.error === "bad_image"
-            ? "Ảnh không hợp lệ (JPEG/PNG, dưới 900KB)."
-            : "Không lưu được.",
-      );
+      setMsg(data.error === "bad_image" ? "Ảnh không hợp lệ (JPEG/PNG, dưới 900KB)." : "Không lưu được.");
       return data;
     }
     setMsg("");
@@ -128,17 +126,40 @@ export default function AdminMenu() {
         ) : (
           <div className="admin-thumb placeholder">Ảnh</div>
         )}
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => void onPickPhoto(e.target.files?.[0])} />
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(e) => void onPickPhoto(e.target.files?.[0])}
+        />
         <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
           {categories.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
           ))}
         </select>
         <input placeholder="Tên món" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <input placeholder="Tên tiếng Anh (tuỳ chọn)" value={form.name_en} onChange={(e) => setForm({ ...form, name_en: e.target.value })} />
-        <textarea placeholder="Mô tả ngắn" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-        <input placeholder="Giá (đ)" inputMode="numeric" value={form.price_dong} onChange={(e) => setForm({ ...form, price_dong: e.target.value })} />
-        <input placeholder="Đơn vị" value={form.unit_name} onChange={(e) => setForm({ ...form, unit_name: e.target.value })} />
+        <input
+          placeholder="Tên tiếng Anh (tuỳ chọn)"
+          value={form.name_en}
+          onChange={(e) => setForm({ ...form, name_en: e.target.value })}
+        />
+        <textarea
+          placeholder="Mô tả ngắn"
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+        />
+        <input
+          placeholder="Giá (đ)"
+          inputMode="numeric"
+          value={form.price_dong}
+          onChange={(e) => setForm({ ...form, price_dong: e.target.value })}
+        />
+        <input
+          placeholder="Đơn vị"
+          value={form.unit_name}
+          onChange={(e) => setForm({ ...form, unit_name: e.target.value })}
+        />
         <div className="kbtns" style={{ marginTop: 10 }}>
           <button
             className="cta"
@@ -172,14 +193,22 @@ export default function AdminMenu() {
 
       {grouped.map((g) => (
         <section key={g.cat.id}>
-          <h2 className="cat-title" style={{ padding: "0 16px" }}>{g.cat.name}</h2>
+          <h2 className="cat-title" style={{ padding: "0 16px" }}>
+            {g.cat.name}
+          </h2>
           {g.items.map((it) => (
             <div className="admin-card" key={it.id}>
               <div className="row-between" style={{ alignItems: "center", gap: 12 }}>
-                {it.image_url ? <img className="admin-thumb" src={it.image_url} alt="" /> : <div className="admin-thumb placeholder" />}
+                {it.image_url ? (
+                  <img className="admin-thumb" src={it.image_url} alt="" />
+                ) : (
+                  <div className="admin-thumb placeholder" />
+                )}
                 <div style={{ flex: 1 }}>
                   <strong>{it.name}</strong>
-                  <div className="muted">{formatVnd(it.units[0]?.price_dong || 0)} · {it.units[0]?.name}</div>
+                  <div className="muted">
+                    {formatVnd(it.units[0]?.price_dong || 0)} · {it.units[0]?.name}
+                  </div>
                 </div>
                 <button
                   className="linkish"
@@ -191,7 +220,9 @@ export default function AdminMenu() {
                       name_en: it.name_en || "",
                       description: it.description || "",
                       category_id: it.category_id,
-                      price_dong: String(it.units.find((u) => u.is_default)?.price_dong || it.units[0]?.price_dong || ""),
+                      price_dong: String(
+                        it.units.find((u) => u.is_default)?.price_dong || it.units[0]?.price_dong || "",
+                      ),
                       unit_name: it.units.find((u) => u.is_default)?.name || it.units[0]?.name || "Phần",
                       image_url: it.image_url || "",
                     })
@@ -199,7 +230,11 @@ export default function AdminMenu() {
                 >
                   Sửa
                 </button>
-                <button className="linkish" type="button" onClick={() => void post({ action: "toggle_sold_out", itemId: it.id })}>
+                <button
+                  className="linkish"
+                  type="button"
+                  onClick={() => void post({ action: "toggle_sold_out", itemId: it.id })}
+                >
                   {it.sold_out ? "Mở bán" : "Hết món"}
                 </button>
               </div>

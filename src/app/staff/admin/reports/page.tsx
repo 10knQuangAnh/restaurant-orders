@@ -1,5 +1,6 @@
 "use client";
 
+import { staffResponseOk } from "@/lib/staffClient";
 import { StaffNav } from "@/components/staff/Nav";
 import { formatVnd } from "@/lib/money";
 import { useCallback, useEffect, useState } from "react";
@@ -22,6 +23,7 @@ export default function Reports() {
     if (kind === "custom" && from) q.set("from", from);
     if (kind === "custom" && to) q.set("to", to);
     const res = await fetch(`/api/staff/admin?section=reports&${q}`, { cache: "no-store" });
+    if (!staffResponseOk(res)) return;
     setR((await res.json()) as Report);
   }, [kind, from, to]);
 
@@ -29,13 +31,20 @@ export default function Reports() {
     void load();
   }, [load]);
 
-  if (!r) return <main className="admin" style={{ padding: 24 }}>Đang tính…</main>;
+  if (!r)
+    return (
+      <main className="admin" style={{ padding: 24 }}>
+        Đang tính…
+      </main>
+    );
   const span = r.range ? (r.range.from === r.range.to ? r.range.from : `${r.range.from} → ${r.range.to}`) : "";
   const aov = r.today.orders ? Math.round(Number(r.today.revenue) / r.today.orders) : 0;
 
   return (
     <main className="admin" style={{ paddingBottom: 90 }}>
-      <header className="staff-top"><h1>Báo cáo</h1></header>
+      <header className="staff-top">
+        <h1>Báo cáo</h1>
+      </header>
       <div className="report-tabs">
         {[
           ["day", "Hôm nay"],
@@ -57,16 +66,39 @@ export default function Reports() {
         </section>
       )}
       <section className="admin-card">
-        <div className="muted" style={{ marginBottom: 8 }}>{span}</div>
-        <div className="row-between"><span>Hóa đơn đã thu</span><strong>{r.today.orders}</strong></div>
-        <div className="row-between"><span>Doanh thu</span><strong>{formatVnd(Number(r.today.revenue))}</strong></div>
-        <div className="row-between muted"><span>Tiền mặt</span><span>{formatVnd(Number(r.today.cash))}</span></div>
-        <div className="row-between muted"><span>Chuyển khoản</span><span>{formatVnd(Number(r.today.transfer))}</span></div>
-        <div className="row-between muted"><span>TB / hóa đơn</span><span>{formatVnd(aov)}</span></div>
+        <div className="muted" style={{ marginBottom: 8 }}>
+          {span}
+        </div>
+        <div className="row-between">
+          <span>Hóa đơn đã thu</span>
+          <strong>{r.today.orders}</strong>
+        </div>
+        <div className="row-between">
+          <span>Doanh thu</span>
+          <strong>{formatVnd(Number(r.today.revenue))}</strong>
+        </div>
+        <div className="row-between muted">
+          <span>Tiền mặt</span>
+          <span>{formatVnd(Number(r.today.cash))}</span>
+        </div>
+        <div className="row-between muted">
+          <span>Chuyển khoản</span>
+          <span>{formatVnd(Number(r.today.transfer))}</span>
+        </div>
+        <div className="row-between muted">
+          <span>TB / hóa đơn</span>
+          <span>{formatVnd(aov)}</span>
+        </div>
       </section>
       <section className="admin-card">
-        <div className="row-between"><span>Bàn đang mở</span><strong>{r.open.n}</strong></div>
-        <div className="row-between muted"><span>Giá trị đang mở</span><span>{formatVnd(Number(r.open.value))}</span></div>
+        <div className="row-between">
+          <span>Bàn đang mở</span>
+          <strong>{r.open.n}</strong>
+        </div>
+        <div className="row-between muted">
+          <span>Giá trị đang mở</span>
+          <span>{formatVnd(Number(r.open.value))}</span>
+        </div>
       </section>
       <section className="admin-card">
         <b>Món chạy</b>

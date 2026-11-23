@@ -42,7 +42,7 @@ try {
   const done = new Set(
     (await client.query("select name from schema_migrations")).rows.map((r) => r.name),
   );
-  for (const file of files.filter((f) => !done.has(file))) {
+  for (const file of files.filter((f) => !done.has(f))) {
     await client.query("begin");
     try {
       await client.query(await readFile(`migrations/${file}`, "utf8"));

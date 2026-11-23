@@ -30,7 +30,10 @@ type Ticket = {
   items: TicketItem[];
 };
 
-type FloorTable = { table: { id: string; code: string; name: string }; orderId: string | null };
+type FloorTable = {
+  table: { id: string; code: string; name: string };
+  orderId: string | null;
+};
 
 const kLabel: Record<string, string> = {
   queued: "chờ",
@@ -38,14 +41,26 @@ const kLabel: Record<string, string> = {
   done: "xong",
   "86": "hết",
   cancelled: "hủy",
+  served: "đã phục vụ",
 };
 
 export default function TicketPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const router = useRouter();
   const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [bill, setBill] = useState<{ subtotal: number; vat: number; service: number; discount?: number; total: number; cashTotal: number } | null>(null);
-  const [settings, setSettings] = useState<{ bank_name?: string; bank_account?: string; bank_holder?: string } | null>(null);
+  const [bill, setBill] = useState<{
+    subtotal: number;
+    vat: number;
+    service: number;
+    discount?: number;
+    total: number;
+    cashTotal: number;
+  } | null>(null);
+  const [settings, setSettings] = useState<{
+    bank_name?: string;
+    bank_account?: string;
+    bank_holder?: string;
+  } | null>(null);
   const [staff, setStaff] = useState<{ role: string; name: string } | null>(null);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [addOn, setAddOn] = useState(false);
@@ -54,14 +69,25 @@ export default function TicketPage() {
   const [tables, setTables] = useState<FloorTable[]>([]);
   const [splitOn, setSplitOn] = useState(false);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [discount, setDiscount] = useState("");
   const [cancelId, setCancelId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/staff/order/${orderId}`, { cache: "no-store" });
+    const res = await fetch(`/api/staff/order/${orderId}`, {
+      cache: "no-store",
+    });
     if (res.status === 401) {
       router.replace("/staff");
+      return;
+    }
+    if (res.status === 403) {
+      router.replace("/staff/kitchen");
+      return;
+    }
+    if (!res.ok) {
+      setMsg("Không mở được phiếu. Vui lòng thử lại.");
       return;
     }
     const data = (await res.json()) as {
@@ -81,36 +107,59 @@ export default function TicketPage() {
   }, [load]);
 
   async function act(body: Record<string, unknown>) {
-    const res = await fetch(`/api/staff/order/${orderId}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = (await res.json()) as { orderId?: string; paid?: number; error?: string; tableReset?: boolean };
-    if (data.error === "need_reason") {
-      setMsg("Chọn lý do hủy món");
-      return;
+    if (busy) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const res = await fetch(`/api/staff/order/${orderId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json()) as {
+        orderId?: string;
+        paid?: number;
+        error?: string;
+        tableReset?: boolean;
+      };
+      if (!res.ok) {
+        const messages: Record<string, string> = {
+          need_reason: "Chọn lý do hủy món",
+          need_admin: "Thao tác này cần quản trị.",
+          not_open: "Phiếu đã đóng. Vui lòng kiểm tra lại.",
+          closed: "Phiếu đã đóng.",
+          sold_out: "Món vừa hết hoặc không đủ tồn kho.",
+          insufficient_cash: "Tiền khách đưa chưa đủ.",
+          table_busy: "Bàn đang có khách. Chọn bàn trống để tách.",
+          same_table: "Chọn bàn khác để tách hoặc chuyển.",
+          need_items: "Chọn món cần tách trước.",
+          bad_qty: "Số lượng phải từ 1 đến 99.",
+          already_closed: "Món đã hủy hoặc báo hết.",
+        };
+        setMsg(messages[data.error || ""] || "Không thực hiện được. Vui lòng thử lại.");
+        return;
+      }
+      if (data.orderId && data.orderId !== orderId) {
+        router.replace(`/staff/ticket/${data.orderId}`);
+        return;
+      }
+      if (body.action === "pay") {
+        setMsg("Đã thu · bàn trống, khách mới quét QR được");
+        setPayOn(null);
+        setTimeout(() => router.replace("/staff/floor?reset=1"), 1400);
+        return;
+      }
+      if (body.action === "void") {
+        setMsg("Đã hủy phiếu · bàn trống");
+        setTimeout(() => router.replace("/staff/floor"), 900);
+        return;
+      }
+      await load();
+    } catch {
+      setMsg("Không kết nối được. Vui lòng thử lại.");
+    } finally {
+      setBusy(false);
     }
-    if (data.error === "need_admin") {
-      setMsg("Món đã nấu xong — cần quản trị hủy.");
-      return;
-    }
-    if (data.orderId && data.orderId !== orderId) {
-      router.replace(`/staff/ticket/${data.orderId}`);
-      return;
-    }
-    if (body.action === "pay") {
-      setMsg("Đã thu · bàn trống, khách mới quét QR được");
-      setPayOn(null);
-      setTimeout(() => router.replace("/staff/floor?reset=1"), 1400);
-      return;
-    }
-    if (body.action === "void") {
-      setMsg("Đã hủy phiếu · bàn trống");
-      setTimeout(() => router.replace("/staff/floor"), 900);
-      return;
-    }
-    await load();
   }
 
   async function loadMenu() {
@@ -129,7 +178,7 @@ export default function TicketPage() {
   if (!ticket || !bill) {
     return (
       <main className="staff-root" style={{ padding: 24 }}>
-        <p>Đang mở phiếu…</p>
+        <p>{msg || "Đang mở phiếu…"}</p>
       </main>
     );
   }
@@ -165,91 +214,208 @@ export default function TicketPage() {
               {it.note ? ` · ${it.note}` : ""}
               {it.rush ? " · gấp" : ""}
             </div>
-            <div className="kbtns">
-              <button className="k-start" onClick={() => void act({ action: "patch_item", itemId: it.id, qty: it.qty + 1 })}>
-                +
-              </button>
-              <button className="k-start" onClick={() => void act({ action: "patch_item", itemId: it.id, qty: Math.max(0, it.qty - 1) })}>
-                −
-              </button>
-              <button className="k-start" onClick={() => void act({ action: "patch_item", itemId: it.id, rush: !it.rush })}>
-                Gấp
-              </button>
-              <button className="k-start" onClick={() => void act({ action: "patch_item", itemId: it.id, complementary: !it.complementary })}>
-                Tặng
-              </button>
-              <button className="k-86" onClick={() => setCancelId(it.id)}>
-                Hủy
-              </button>
-              {splitOn && (
+            {ticket.order.status === "open" && it.kitchen_status !== "86" && (
+              <fieldset disabled={busy} className="kbtns" style={{ border: 0, padding: 0 }}>
                 <button
                   className="k-start"
-                  onClick={() => setPicked((p) => ({ ...p, [it.id]: !p[it.id] }))}
+                  onClick={() =>
+                    void act({
+                      action: "patch_item",
+                      itemId: it.id,
+                      qty: it.qty + 1,
+                    })
+                  }
                 >
-                  {picked[it.id] ? "✓ Tách" : "Tách"}
+                  +
                 </button>
-              )}
-            </div>
+                <button
+                  className="k-start"
+                  onClick={() =>
+                    void act({
+                      action: "patch_item",
+                      itemId: it.id,
+                      qty: Math.max(1, it.qty - 1),
+                    })
+                  }
+                >
+                  −
+                </button>
+                <button
+                  className="k-start"
+                  onClick={() =>
+                    void act({
+                      action: "patch_item",
+                      itemId: it.id,
+                      rush: !it.rush,
+                    })
+                  }
+                >
+                  Gấp
+                </button>
+                <button
+                  className="k-start"
+                  onClick={() =>
+                    void act({
+                      action: "patch_item",
+                      itemId: it.id,
+                      complementary: !it.complementary,
+                    })
+                  }
+                >
+                  Tặng
+                </button>
+                <button className="k-86" onClick={() => setCancelId(it.id)}>
+                  Hủy
+                </button>
+                {splitOn && (
+                  <button className="k-start" onClick={() => setPicked((p) => ({ ...p, [it.id]: !p[it.id] }))}>
+                    {picked[it.id] ? "✓ Tách" : "Tách"}
+                  </button>
+                )}
+              </fieldset>
+            )}
           </div>
         ))}
       </section>
 
       <div className="pay-box">
-        <div className="row-between"><span>Tạm tính</span><span>{formatVnd(bill.subtotal)}</span></div>
-        <div className="row-between muted"><span>VAT (gồm)</span><span>{formatVnd(bill.vat)}</span></div>
-        <div className="row-between muted"><span>Phí phục vụ</span><span>{formatVnd(bill.service)}</span></div>
-        <div className="row-between muted"><span>Giảm giá</span><span>{formatVnd(bill.discount || 0)}</span></div>
+        <div className="row-between">
+          <span>Tạm tính</span>
+          <span>{formatVnd(bill.subtotal)}</span>
+        </div>
+        <div className="row-between muted">
+          <span>VAT (gồm)</span>
+          <span>{formatVnd(bill.vat)}</span>
+        </div>
+        <div className="row-between muted">
+          <span>Phí phục vụ</span>
+          <span>{formatVnd(bill.service)}</span>
+        </div>
+        <div className="row-between muted">
+          <span>Giảm giá</span>
+          <span>{formatVnd(bill.discount || 0)}</span>
+        </div>
         <div className="row-between" style={{ marginTop: 8, fontWeight: 800 }}>
-          <span>Phải thu</span><span>{formatVnd(bill.total)}</span>
+          <span>Phải thu</span>
+          <span>{formatVnd(bill.total)}</span>
         </div>
         <div className="muted">Tiền mặt {formatVnd(bill.cashTotal)}</div>
-        <div className="kbtns" style={{ marginTop: 10 }}>
-          <input
-            className="field"
-            style={{ flex: 1, height: 40, margin: 0 }}
-            inputMode="numeric"
-            placeholder="Giảm giá (đ)"
-            value={discount}
-            onChange={(e) => setDiscount(e.target.value)}
-          />
-          <button className="k-start" onClick={() => void act({ action: "discount", amount: Number(discount || 0) })}>
-            Áp giảm
-          </button>
-        </div>
-        <div className="kbtns" style={{ marginTop: 12 }}>
-          <button className="k-start" onClick={() => void loadMenu()}>Thêm món</button>
-          <button className="k-start" onClick={() => { setSplitOn((s) => !s); void loadTables(); }}>Tách</button>
-          <button className="k-start" onClick={() => void loadTables()}>Chuyển/Gộp</button>
-        </div>
-        <div className="kbtns">
-          <button className="k-start" onClick={() => window.print()}>In tạm tính</button>
-          <button className="k-done" onClick={() => setPayOn("cash")}>Tiền mặt</button>
-          <button className="k-done" onClick={() => setPayOn("transfer")}>Chuyển khoản</button>
-          <button
-            className="k-86"
-            onClick={() => {
-              if (confirm("Hủy cả phiếu? Bàn sẽ trống cho khách mới.")) void act({ action: "void" });
-            }}
-          >
-            Hủy phiếu
-          </button>
-        </div>
-        {msg && <p className="ok-text">{msg}</p>}
+        {ticket.order.status === "open" && (
+          <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
+            <div className="kbtns" style={{ marginTop: 10 }}>
+              <input
+                className="field"
+                style={{ flex: 1, height: 40, margin: 0 }}
+                inputMode="numeric"
+                placeholder="Giảm giá (đ)"
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+              />
+              <button
+                className="k-start"
+                onClick={() =>
+                  void act({
+                    action: "discount",
+                    amount: Number(discount || 0),
+                  })
+                }
+              >
+                Áp giảm
+              </button>
+            </div>
+            <div className="kbtns" style={{ marginTop: 12 }}>
+              <button className="k-start" onClick={() => void loadMenu()}>
+                Thêm món
+              </button>
+              <button
+                className="k-start"
+                onClick={() => {
+                  setSplitOn((s) => !s);
+                  setPicked({});
+                  setTables([]);
+                }}
+              >
+                {splitOn ? "Bỏ tách" : "Tách"}
+              </button>
+              {splitOn && (
+                <button
+                  className="k-start"
+                  disabled={!Object.values(picked).some(Boolean)}
+                  onClick={() => void loadTables()}
+                >
+                  Chọn bàn tách
+                </button>
+              )}
+              <button
+                className="k-start"
+                onClick={() => {
+                  setSplitOn(false);
+                  void loadTables();
+                }}
+              >
+                Chuyển/Gộp
+              </button>
+            </div>
+            <div className="kbtns">
+              <button className="k-start" onClick={() => window.print()}>
+                In tạm tính
+              </button>
+              <button className="k-done" onClick={() => setPayOn("cash")}>
+                Tiền mặt
+              </button>
+              <button className="k-done" onClick={() => setPayOn("transfer")}>
+                Chuyển khoản
+              </button>
+              <button
+                className="k-86"
+                onClick={() => {
+                  if (confirm("Hủy cả phiếu? Bàn sẽ trống cho khách mới.")) void act({ action: "void" });
+                }}
+              >
+                Hủy phiếu
+              </button>
+            </div>
+          </fieldset>
+        )}
+        {msg && (
+          <p role="status" className="ok-text">
+            {msg}
+          </p>
+        )}
       </div>
 
       {addOn && (
         <div className="modal-back" onClick={() => setAddOn(false)}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxHeight: "70vh", overflow: "auto", background: "#231c18", color: "#f6eee6" }}>
+          <div
+            className="sheet"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxHeight: "70vh",
+              overflow: "auto",
+              background: "#231c18",
+              color: "#f6eee6",
+            }}
+          >
             <h2>Gọi hộ</h2>
             {menu.map((it) => (
               <button
                 key={it.id}
                 className="row-between"
-                style={{ width: "100%", background: "none", border: 0, color: "inherit", padding: "10px 0", textAlign: "left" }}
-                disabled={it.sold_out}
+                style={{
+                  width: "100%",
+                  background: "none",
+                  border: 0,
+                  color: "inherit",
+                  padding: "10px 0",
+                  textAlign: "left",
+                }}
+                disabled={busy || it.sold_out || !it.units.length}
                 onClick={() => {
                   const u = it.units[0];
-                  void act({ action: "add", items: [{ itemId: it.id, unitId: u.id, qty: 1 }] });
+                  void act({
+                    action: "add",
+                    items: [{ itemId: it.id, unitId: u.id, qty: 1 }],
+                  });
                   setAddOn(false);
                 }}
               >
@@ -263,35 +429,59 @@ export default function TicketPage() {
 
       {tables.length > 0 && !payOn && (
         <div className="modal-back" onClick={() => setTables([])}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ background: "#231c18", color: "#f6eee6" }}>
+          <div
+            className="sheet"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#231c18", color: "#f6eee6" }}
+          >
             <h2>{splitOn ? "Tách sang bàn" : "Chuyển / gộp bàn"}</h2>
-            {tables.map((t) => (
-              <button
-                key={t.table.id}
-                style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: 0, color: "inherit", padding: "10px 0" }}
-                onClick={() => {
-                  if (splitOn) {
-                    const itemIds = Object.entries(picked).filter(([, v]) => v).map(([k]) => k);
-                    void act({ action: "split", itemIds, tableId: t.table.id });
-                    setSplitOn(false);
+            {tables
+              .filter((t) => t.table.id !== ticket.order.table_id && (!splitOn || !t.orderId))
+              .map((t) => (
+                <button
+                  key={t.table.id}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    background: "none",
+                    border: 0,
+                    color: "inherit",
+                    padding: "10px 0",
+                  }}
+                  onClick={() => {
+                    if (splitOn) {
+                      const itemIds = Object.entries(picked)
+                        .filter(([, v]) => v)
+                        .map(([k]) => k);
+                      void act({
+                        action: "split",
+                        itemIds,
+                        tableId: t.table.id,
+                      });
+                      setSplitOn(false);
+                      setTables([]);
+                      return;
+                    }
+                    if (t.orderId && t.orderId !== orderId) void act({ action: "merge", otherOrderId: t.orderId });
+                    else void act({ action: "transfer", tableId: t.table.id });
                     setTables([]);
-                    return;
-                  }
-                  if (t.orderId && t.orderId !== orderId) void act({ action: "merge", otherOrderId: t.orderId });
-                  else void act({ action: "transfer", tableId: t.table.id });
-                  setTables([]);
-                }}
-              >
-                {t.table.code} {t.table.name} {t.orderId ? "(gộp)" : ""}
-              </button>
-            ))}
+                  }}
+                >
+                  {t.table.code} {t.table.name} {t.orderId ? "(gộp)" : ""}
+                </button>
+              ))}
           </div>
         </div>
       )}
 
       {cancelId && (
         <div className="modal-back" onClick={() => setCancelId(null)}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ background: "#231c18", color: "#f6eee6" }}>
+          <div
+            className="sheet"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#231c18", color: "#f6eee6" }}
+          >
             <h2>Lý do hủy món</h2>
             <p className="muted">Bếp sẽ thấy phiếu hủy. Món đã nấu xong cần quản trị.</p>
             <div className="kbtns">
@@ -303,7 +493,12 @@ export default function TicketPage() {
                   onClick={() => {
                     const id = cancelId;
                     setCancelId(null);
-                    void act({ action: "patch_item", itemId: id, cancel: true, cancelReason: reason });
+                    void act({
+                      action: "patch_item",
+                      itemId: id,
+                      cancel: true,
+                      cancelReason: reason,
+                    });
                   }}
                 >
                   {reason}
@@ -316,7 +511,11 @@ export default function TicketPage() {
 
       {payOn && (
         <div className="modal-back" onClick={() => setPayOn(null)}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ background: "#231c18", color: "#f6eee6" }}>
+          <div
+            className="sheet"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#231c18", color: "#f6eee6" }}
+          >
             <h2>{payOn === "cash" ? "Thu tiền mặt" : "Chuyển khoản"}</h2>
             <p>Phải thu {formatVnd(payOn === "cash" ? bill.cashTotal : bill.total)}</p>
             {payOn === "transfer" && settings?.bank_account && (
@@ -336,13 +535,15 @@ export default function TicketPage() {
                 <p>Thối {formatVnd(change)}</p>
               </>
             )}
+            {msg && <p role="alert">{msg}</p>}
             <button
               className="cta"
+              disabled={busy || (payOn === "cash" && received !== "" && Number(received) < bill.cashTotal)}
               onClick={() =>
                 void act({
                   action: "pay",
                   method: payOn,
-                  received: Number(received || bill.cashTotal),
+                  received: payOn === "cash" ? Number(received || bill.cashTotal) : bill.total,
                 })
               }
             >

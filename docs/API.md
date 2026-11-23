@@ -22,3 +22,12 @@ Auth staff: cookie `staff_session` HttpOnly; SameSite=Lax; Secure on HTTPS. Logi
 | POST | `/api/platform/seed` | `x-platform-secret` | demo seed if tenants empty; 409 if already seeded |
 
 Errors: `{ error: code }` with 400/401/403/404/409/429. Write requests with foreign Origin → 403 csrf.
+
+Audit clarifications (2026-11-23):
+
+- PIN is a string of 4–8 digits. Malformed login fields return 400; concurrent failed attempts count toward the same lockout.
+- Bodies must be JSON objects. Order batches must contain 1–100 valid lines, each with integer quantity 1–99 and matching item/unit IDs. Invalid lines reject the whole batch. Quantity zero is rejected; cancellation uses `cancel: true` plus a reason.
+- Finite stock is reserved atomically for guest/staff adds and positive quantity changes; negative quantity deltas and cancellation restore stock once.
+- Split requires `itemIds` and a different free `tableId`: 400 `need_items` / `need_table`, 409 `same_table` / `table_busy`. Transfer/merge carry existing discounts forward.
+- Cash `pay` settles `bill.cashTotal`; transfer settles `bill.total`. An optional `received` must be a safe integer at least equal to the settlement amount, otherwise 400 `insufficient_cash`. Successful response `paid`, payment amount and frozen snapshot total match.
+- Foreign staff IDs on `reset_pin` / `set_staff_active` return 404 before changing credentials or sessions.

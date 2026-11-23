@@ -22,7 +22,12 @@ async function loadSql(dir: "migrations" | "seeds"): Promise<{ name: string; sql
   const folder = join(process.cwd(), dir);
   const names = (await readdir(folder).catch(() => [])).filter((f) => f.endsWith(".sql")).sort();
   if (names.length) {
-    return Promise.all(names.map(async (name) => ({ name, sql: await readFile(join(folder, name), "utf8") })));
+    return Promise.all(
+      names.map(async (name) => ({
+        name,
+        sql: await readFile(join(folder, name), "utf8"),
+      })),
+    );
   }
   return bundledSql[dir].map((file) => ({ name: file.name, sql: file.sql }));
 }
@@ -63,7 +68,11 @@ async function migratePool(pool: pg.Pool) {
       }
     }
   } finally {
-    client.release();
+    try {
+      await client.query("select pg_advisory_unlock(7272741)");
+    } finally {
+      client.release();
+    }
   }
 }
 
@@ -77,7 +86,7 @@ async function bootPostgres(url: string) {
   g.__printOrderPool = pool;
   await migratePool(pool);
   const counted = await pool.query(`select count(*)::int as c from tenants`);
-  if (Number(counted.rows[0]?.c || 0) === 0 && process.env.SEED_DEMO !== "0") {
+  if (Number(counted.rows[0]?.c || 0) === 0 && demoSeedEnabled()) {
     for (const file of await loadSql("seeds")) {
       await pool.query(file.sql);
     }
@@ -91,7 +100,7 @@ async function bootLocal() {
   for (const file of await loadSql("migrations")) {
     await db.exec(file.sql);
   }
-  if (process.env.SEED_DEMO !== "0") {
+  if (demoSeedEnabled()) {
     for (const file of await loadSql("seeds")) {
       await db.exec(file.sql);
     }
@@ -102,6 +111,9 @@ async function bootLocal() {
 }
 
 function boot(): Promise<void> {
+  if (!databaseUrl && process.env.NODE_ENV === "production") {
+    return Promise.reject(new Error("Production requires a persistent PostgreSQL database"));
+  }
   g.__printOrderBoot ??= (databaseUrl ? bootPostgres(databaseUrl) : bootLocal()).catch((error: unknown) => {
     g.__printOrderBoot = undefined;
     g.__printOrderPool = undefined;
@@ -111,10 +123,11 @@ function boot(): Promise<void> {
   return g.__printOrderBoot;
 }
 
-export async function sql<T = Record<string, unknown>>(
-  text: string,
-  params: unknown[] = [],
-): Promise<T[]> {
+function demoSeedEnabled(): boolean {
+  return process.env.NODE_ENV === "production" ? process.env.SEED_DEMO === "1" : process.env.SEED_DEMO !== "0";
+}
+
+export async function sql<T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> {
   await boot();
   if (g.__printOrderPool) {
     return (await g.__printOrderPool.query(text, params)).rows as T[];
@@ -145,18 +158,8 @@ export async function withTx<T>(fn: (q: QueryFn) => Promise<T>): Promise<T> {
     }
   }
   const db = await (g.__printOrderLocal as Promise<PGlite>);
-  await db.exec("begin");
-  try {
-    const q: QueryFn = async (text, params = []) => (await db.query(text, params)).rows as never;
-    const result = await fn(q);
-    await db.exec("commit");
-    return result;
-  } catch (error) {
-    try {
-      await db.exec("rollback");
-    } catch {
-      /* ignore */
-    }
-    throw error;
-  }
+  return db.transaction(async (tx) => {
+    const q: QueryFn = async (text, params = []) => (await tx.query(text, params)).rows as never;
+    return fn(q);
+  });
 }

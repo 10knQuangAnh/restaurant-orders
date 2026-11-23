@@ -7,6 +7,27 @@ Last verified: 2026-11-23 · Scope: how to test
 4. Browser: `/staff?slug=quan-tu-do` pick person + PIN; `/t/t9-tu-do` guest (EN/VI, call reasons, PII consent). Waiter/kitchen `/staff/stock` + bell. Ticket **In tạm tính**. `GET /api/readyz` → `{ ready: true }`.
 5. Admin menu: sửa món + ảnh; danh mục thêm/đổi tên/xóa (chuyển món). Guest **Món đã gọi** gỡ dòng `queued`. Staff hủy món có lý do. Thu tiền → bàn trống, QR cũ vẫn dùng. Tables tải PNG. Báo cáo hôm nay/tuần/tháng.
 
+## Regression suites added 2026-11-23
+
+Use a disposable database with demo fixtures. Run these suites **sequentially**: they change stock, settings, sessions and orders. `PROBE_URL` defaults to `http://127.0.0.1:3000`.
+
+```bash
+npm run test:probe
+npm run test:regression
+npm run test:ops
+npx playwright install chromium
+npm run test:browser
+TEST_DATABASE_URL=postgres://… npm run test:database
+```
+
+- `test:regression`: 20 scenarios, including concurrent first orders, finite stock, edits/cancellation, cash rounding, insufficient cash, split/transfer/merge, tenant isolation, CSRF, concurrent payment, kitchen transitions and PIN lockout.
+- `test:browser`: mobile Chromium (390×844), PIN with eight digits, simulated rejected payment, protected/admin route sweep, guest item → cart → order → cancellation, and selecting lines before splitting to a free table. `CHROMIUM_PATH` optionally points to an installed Chromium executable.
+- `test:database`: migration CLI twice, advisory lock release, stock/order/payment/snapshot invariants. Use the same disposable database as the server.
+- `test:platform`: run against a disposable server started with `PLATFORM_SECRET`, then set `TEST_PLATFORM_SECRET` to that value for the test. Covers unauthorized calls, creating/importing venues, duplicate slugs and new-admin login.
+- Production verification: `DATABASE_URL=… npm run build`, then `DATABASE_URL=… npx next start -p 3001`; set `PROBE_URL=http://127.0.0.1:3001`. A fresh production DB must have zero tenants unless demo seeding is explicitly enabled. Missing PostgreSQL must return 503 from readiness.
+
+Evidence and remaining limits: [2026-11-23 audit](TEST-AUDIT-2026-11-23.md).
+
 Demo fixture (local/dev only, not printed in UI): tenant `quan-tu-do`; roles admin/waiter/kitchen. Second tenant `quan-sao-bien` shares PIN 2580 for isolation tests.
 
 ## Probe expect (fixed)

@@ -14,7 +14,14 @@ export const GET = wrap(async (request: Request) => {
 });
 
 export const POST = wrap(async (request: Request) => {
-  const body = await readBody<{ pin?: string; slug?: string; staffId?: string }>(request);
+  const body = await readBody<{
+    pin?: string;
+    slug?: string;
+    staffId?: string;
+  }>(request);
+  if ([body.pin, body.slug, body.staffId].some((value) => typeof value !== "string")) {
+    return json({ error: "bad_login" }, 400);
+  }
   const result = await loginWithPin({
     slug: body.slug || "",
     staffId: body.staffId || "",
@@ -22,14 +29,14 @@ export const POST = wrap(async (request: Request) => {
   });
   if ("error" in result) return json({ error: result.error }, result.status);
   const bundle = await tenantBundle(result.staff.tenant_id);
-  return json(
-    { staff: result.staff, tenant: bundle?.tenant, settings: bundle?.settings },
-    200,
-    { "set-cookie": sessionCookie(result.token, requestIsHttps(request)) },
-  );
+  return json({ staff: result.staff, tenant: bundle?.tenant, settings: bundle?.settings }, 200, {
+    "set-cookie": sessionCookie(result.token, requestIsHttps(request)),
+  });
 });
 
 export const DELETE = wrap(async (request: Request) => {
   await logoutSession(request);
-  return json({ ok: true }, 200, { "set-cookie": clearSessionCookie(requestIsHttps(request)) });
+  return json({ ok: true }, 200, {
+    "set-cookie": clearSessionCookie(requestIsHttps(request)),
+  });
 });

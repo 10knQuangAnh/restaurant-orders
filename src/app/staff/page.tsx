@@ -20,6 +20,7 @@ function StaffLoginInner() {
   const [staffId, setStaffId] = useState("");
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
   const [who, setWho] = useState("");
 
   useEffect(() => {
@@ -30,13 +31,17 @@ function StaffLoginInner() {
     }
     void (async () => {
       const res = await fetch("/api/staff/session", { cache: "no-store" });
-      const data = (await res.json()) as { staff?: { name: string; role: string } | null };
+      const data = (await res.json()) as {
+        staff?: { name: string; role: string } | null;
+      };
       if (data.staff) setWho(`${data.staff.name} · ${data.staff.role}`);
     })();
   }, [params]);
 
   async function loadDir(nextSlug: string) {
     setErr("");
+    setStaffId("");
+    setPin("");
     const res = await fetch(`/api/staff/directory?slug=${encodeURIComponent(nextSlug.trim().toLowerCase())}`, {
       cache: "no-store",
     });
@@ -46,43 +51,56 @@ function StaffLoginInner() {
       setErr("Không tìm thấy quán");
       return;
     }
-    const data = (await res.json()) as { tenant: { name: string; slug: string }; people: Person[] };
+    const data = (await res.json()) as {
+      tenant: { name: string; slug: string };
+      people: Person[];
+    };
     setTenantName(data.tenant.name);
     setPeople(data.people);
     localStorage.setItem("venue_slug", data.tenant.slug);
   }
 
   async function submit(next: string) {
-    if (next.length < 4 || !staffId) return;
-    const res = await fetch("/api/staff/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ slug: slug.trim().toLowerCase(), staffId, pin: next }),
-    });
-    if (res.status === 429) {
-      setErr("Tài khoản bị khóa tạm. Thử lại sau.");
-      setPin("");
-      return;
+    if (next.length < 4 || !staffId || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/staff/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          slug: slug.trim().toLowerCase(),
+          staffId,
+          pin: next,
+        }),
+      });
+      if (res.status === 429) {
+        setErr("Tài khoản bị khóa tạm. Thử lại sau.");
+        setPin("");
+        return;
+      }
+      if (res.status === 403) {
+        setErr("Không gửi được từ địa chỉ này. Mở đúng cổng quán.");
+        setPin("");
+        return;
+      }
+      if (!res.ok) {
+        setErr("Sai PIN");
+        setPin("");
+        return;
+      }
+      const data = (await res.json()) as { staff: { role: string } };
+      router.replace(dest[data.staff.role] || "/staff/floor");
+    } catch {
+      setErr("Không kết nối được. Vui lòng thử lại.");
+    } finally {
+      setBusy(false);
     }
-    if (res.status === 403) {
-      setErr("Không gửi được từ địa chỉ này. Mở đúng cổng quán.");
-      setPin("");
-      return;
-    }
-    if (!res.ok) {
-      setErr("Sai PIN");
-      setPin("");
-      return;
-    }
-    const data = (await res.json()) as { staff: { role: string } };
-    router.replace(dest[data.staff.role] || "/staff/floor");
   }
 
   function tap(d: string) {
     setErr("");
-    const next = (pin + d).slice(0, 6);
+    const next = (pin + d).slice(0, 8);
     setPin(next);
-    if (next.length >= 4 && staffId) void submit(next);
   }
 
   async function logout() {
@@ -93,7 +111,15 @@ function StaffLoginInner() {
   return (
     <main className="staff-root">
       <div className="pin-wrap">
-        <p className="who" style={{ color: "#8a7468", letterSpacing: "0.14em", textTransform: "uppercase", fontSize: 12 }}>
+        <p
+          className="who"
+          style={{
+            color: "#8a7468",
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            fontSize: 12,
+          }}
+        >
           Vào ca
         </p>
         <h1>{tenantName || "Chọn quán"}</h1>
@@ -108,7 +134,13 @@ function StaffLoginInner() {
             className="field"
             placeholder="Mã quán (slug)"
             value={slug}
-            onChange={(e) => setSlug(e.target.value)}
+            onChange={(e) => {
+              setSlug(e.target.value);
+              setStaffId("");
+              setPeople([]);
+              setTenantName("");
+              setPin("");
+            }}
             autoCapitalize="none"
             autoCorrect="off"
           />
@@ -138,10 +170,10 @@ function StaffLoginInner() {
         {staffId && (
           <>
             <p className="muted" style={{ color: "#b9a396" }}>
-              Nhập PIN của bạn
+              Nhập PIN của bạn (4–8 số)
             </p>
             <div className="pin-dots">
-              {[0, 1, 2, 3].map((i) => (
+              {Array.from({ length: Math.max(4, pin.length) }, (_, i) => i).map((i) => (
                 <i key={i} className={pin.length > i ? "on" : ""} />
               ))}
             </div>
@@ -149,6 +181,7 @@ function StaffLoginInner() {
               {["1", "2", "3", "4", "5", "6", "7", "8", "9", "←", "0", "C"].map((d) => (
                 <button
                   key={d}
+                  disabled={busy}
                   onClick={() => {
                     if (d === "C") setPin("");
                     else if (d === "←") setPin((p) => p.slice(0, -1));
@@ -159,6 +192,14 @@ function StaffLoginInner() {
                 </button>
               ))}
             </div>
+            <button
+              className="cta"
+              style={{ marginTop: 16 }}
+              disabled={busy || pin.length < 4}
+              onClick={() => void submit(pin)}
+            >
+              {busy ? "Đang đăng nhập…" : "Đăng nhập"}
+            </button>
           </>
         )}
         {err && <p className="err">{err}</p>}

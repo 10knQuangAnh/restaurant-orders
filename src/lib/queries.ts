@@ -1,16 +1,8 @@
 import { sql, type QueryFn } from "./db";
 import { billFromOrder } from "./billing";
+import { ApiError } from "./http";
 import { pickTaxRate, type TaxRateRow, ymdInZone } from "./time";
-import type {
-  Category,
-  DiningTable,
-  ItemUnit,
-  MenuItem,
-  Order,
-  OrderItem,
-  Tenant,
-  TenantSettings,
-} from "./types";
+import type { Category, DiningTable, ItemUnit, MenuItem, Order, OrderItem, Tenant, TenantSettings } from "./types";
 
 function num(v: unknown): number {
   return Number(v ?? 0);
@@ -154,19 +146,21 @@ export async function loadMenu(
     byItem.set(u.item_id, list);
   }
   const catIds = new Set(categories.map((c) => c.id));
-  const items: MenuItem[] = itemRows.filter((it) => opts.includeInactive || catIds.has(it.category_id)).map((it) => {
-    const stock = it.stock_left == null ? null : num(it.stock_left);
-    const soldOut = bool(it.sold_out) || (stock != null && stock <= 0);
-    return {
-      ...it,
-      sold_out: soldOut,
-      active: bool(it.active),
-      stock_left: stock,
-      daily_limit: it.daily_limit == null ? null : num(it.daily_limit),
-      tax_category: it.tax_category || "food",
-      units: byItem.get(it.id) ?? [],
-    };
-  });
+  const items: MenuItem[] = itemRows
+    .filter((it) => opts.includeInactive || catIds.has(it.category_id))
+    .map((it) => {
+      const stock = it.stock_left == null ? null : num(it.stock_left);
+      const soldOut = bool(it.sold_out) || (stock != null && stock <= 0);
+      return {
+        ...it,
+        sold_out: soldOut,
+        active: bool(it.active),
+        stock_left: stock,
+        daily_limit: it.daily_limit == null ? null : num(it.daily_limit),
+        tax_category: it.tax_category || "food",
+        units: byItem.get(it.id) ?? [],
+      };
+    });
   return { categories, items };
 }
 
@@ -215,7 +209,12 @@ function mapItem(it: OrderItem): OrderItem {
 
 export function billFor(
   items: OrderItem[],
-  settings: { vat_rate: number; vat_included: boolean; service_rate: number; cash_round_to: number },
+  settings: {
+    vat_rate: number;
+    vat_included: boolean;
+    service_rate: number;
+    cash_round_to: number;
+  },
   discount = 0,
 ) {
   return billFromOrder(items, settings, discount);
@@ -352,6 +351,19 @@ export async function restoreItemStock(q: QueryFn, tenantId: string, itemId: str
       where id = $2 and tenant_id = $3`,
     [qty, itemId, tenantId],
   );
+}
+
+// One conditional UPDATE both checks and reserves stock, including duplicate lines.
+export async function reserveItemStock(q: QueryFn, tenantId: string, itemId: string, qty: number) {
+  const rows = await q<{ id: string }>(
+    `update items set stock_left = stock_left - $1,
+       sold_out = case when stock_left is null then sold_out else stock_left - $1 <= 0 end
+     where id = $2 and tenant_id = $3 and active = true and sold_out = false
+       and (stock_left is null or stock_left >= $1)
+     returning id`,
+    [qty, itemId, tenantId],
+  );
+  if (!rows[0]) throw new ApiError(409, "sold_out");
 }
 
 export async function writeAudit(
