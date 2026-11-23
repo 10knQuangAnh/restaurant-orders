@@ -2,15 +2,22 @@ import { readFile } from "node:fs/promises";
 import { randomBytes, scryptSync } from "node:crypto";
 import pg from "pg";
 import { parseTenantSpec } from "../src/lib/tenantSpec.ts";
+import { usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
 
 const file = process.argv[2];
 if (!file) {
   console.error("Usage: DATABASE_URL=postgres://... npm run seed:tenant -- seeds/templates/quan-sample.json");
   process.exit(1);
 }
-const url = process.env.DATABASE_URL?.trim() ?? "";
+
+const url = usablePostgresUrl(
+  process.env.DATABASE_URL_UNPOOLED,
+  process.env.DATABASE_URL,
+  process.env.POSTGRES_URL_NON_POOLING,
+  process.env.POSTGRES_URL,
+);
 if (!url) {
-  console.error("seed:tenant needs DATABASE_URL (Postgres). PGlite inside next dev is a different process.");
+  console.error("seed:tenant needs a real postgres:// DATABASE_URL (or POSTGRES_URL). PGlite inside next dev is a different process.");
   process.exit(1);
 }
 
@@ -23,7 +30,7 @@ function hashPin(pin, salt = randomBytes(16).toString("hex")) {
 }
 
 const spec = parseTenantSpec(JSON.parse(await readFile(file, "utf8")));
-const client = new pg.Client({ connectionString: process.env.DATABASE_URL_UNPOOLED?.trim() || url });
+const client = new pg.Client({ connectionString: url });
 await client.connect();
 try {
   const taken = await client.query("select id from tenants where slug = $1", [spec.tenant.slug]);

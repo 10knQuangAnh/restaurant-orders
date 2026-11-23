@@ -1,15 +1,21 @@
 import { readdir, readFile } from "node:fs/promises";
 import { randomBytes, scryptSync } from "node:crypto";
 import pg from "pg";
+import { usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
 
 if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "1") {
   console.error("seed:demo blocked when NODE_ENV=production (set ALLOW_DEMO_SEED=1 to override)");
   process.exit(1);
 }
 
-const url = process.env.DATABASE_URL?.trim() ?? "";
+const url = usablePostgresUrl(
+  process.env.DATABASE_URL_UNPOOLED,
+  process.env.DATABASE_URL,
+  process.env.POSTGRES_URL_NON_POOLING,
+  process.env.POSTGRES_URL,
+);
 if (!url) {
-  console.error("seed:demo needs DATABASE_URL");
+  console.error("seed:demo needs a real postgres:// DATABASE_URL (or POSTGRES_URL)");
   process.exit(1);
 }
 
@@ -17,7 +23,7 @@ function hashPin(pin, salt = randomBytes(16).toString("hex")) {
   return `${salt}:${scryptSync(pin, salt, 32).toString("hex")}`;
 }
 
-const client = new pg.Client({ connectionString: process.env.DATABASE_URL_UNPOOLED?.trim() || url });
+const client = new pg.Client({ connectionString: url });
 await client.connect();
 try {
   const files = (await readdir("seeds")).filter((f) => f.endsWith(".sql")).sort();

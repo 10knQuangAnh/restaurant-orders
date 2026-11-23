@@ -2,8 +2,9 @@ import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import pg from "pg";
 import { hashPin } from "./pin";
+import { runtimePostgresUrl } from "./postgresUrl.mjs";
 
-const databaseUrl = process.env.DATABASE_URL?.trim() ?? "";
+const databaseUrl = runtimePostgresUrl();
 
 type DbGlobal = typeof globalThis & {
   __printOrderPool?: pg.Pool;
