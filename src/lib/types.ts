@@ -7,6 +7,8 @@ export type Tenant = {
   accent_color: string;
   phone: string | null;
   address: string | null;
+  hours?: string | null;
+  tagline?: string | null;
 };
 
 export type TenantSettings = {

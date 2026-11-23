@@ -34,7 +34,7 @@ function features(raw: unknown): Record<string, boolean> {
 export async function tableByToken(token: string) {
   const tables = await sql<DiningTable & Tenant>(
     `select t.id, t.tenant_id, t.code, t.name, t.qr_token, t.zone, t.seats,
-            r.id as rid, r.slug, r.name as restaurant_name, r.logo_url, r.primary_color, r.accent_color, r.phone, r.address
+            r.id as rid, r.slug, r.name as restaurant_name, r.logo_url, r.primary_color, r.accent_color, r.phone, r.address, r.hours, r.tagline
      from dining_tables t
      join tenants r on r.id = t.tenant_id
      where t.qr_token = $1
@@ -58,6 +58,8 @@ export async function tableByToken(token: string) {
     accent_color: row.accent_color,
     phone: row.phone,
     address: row.address,
+    hours: (row as unknown as { hours?: string }).hours ?? null,
+    tagline: (row as unknown as { tagline?: string }).tagline ?? null,
   };
   return {
     table: {
@@ -85,7 +87,7 @@ export async function tableByToken(token: string) {
 
 export async function tenantBundle(tenantId: string) {
   const tenants = await sql<Tenant>(
-    `select id, slug, name, logo_url, primary_color, accent_color, phone, address from tenants where id = $1`,
+    `select id, slug, name, logo_url, primary_color, accent_color, phone, address, hours, tagline from tenants where id = $1`,
     [tenantId],
   );
   const tenant = tenants[0];

@@ -24,3 +24,9 @@ Guest QR is unauthenticated. Staff uses restaurant PIN; if the app is published 
 ## Publish
 
 `cursor-app.json` declares Postgres. Staff routes send `Cache-Control: private, no-store`. Choose **public** if diners must open table QR without a Cursor account; staff still use PIN. Choose **team** if only teammates should open the app (QR guests would need to sign in).
+
+GitHub Pages will not run this app (Next.js + database). After `git push origin main`, import the repo on Vercel (GitHub OAuth — no separate password) and point a subdomain CNAME at Vercel.
+
+## Demo tenant
+
+Quán Tự Do — cơm nhà / bánh xèo / bia / rượu quê. Giá tham khảo nhà hàng món Việt TP.HCM 2026 (tầm trung Q1–Q3), **không** copy thương hiệu quán thật. VAT 8% gồm trong giá menu; phí phục vụ 5% lúc thu.

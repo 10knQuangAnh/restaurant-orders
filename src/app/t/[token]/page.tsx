@@ -139,6 +139,9 @@ export default function MenuPage() {
         <h1>
           {data.table.code} - {data.table.name}
         </h1>
+        {data.tenant.hours && (
+          <p style={{ margin: "4px 0 0", fontSize: 12, opacity: 0.92 }}>{data.tenant.hours}</p>
+        )}
       </header>
       <div className="action-row">
         <button className="search-btn" aria-label="Tìm món" onClick={() => setSearchOn(true)}>
