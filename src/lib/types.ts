@@ -22,6 +22,7 @@ export type TenantSettings = {
   bank_holder: string | null;
   features: Record<string, boolean>;
   timezone: string;
+  day_cut_hour?: number;
 };
 
 export type Role = "admin" | "waiter" | "kitchen";

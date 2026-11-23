@@ -3,7 +3,7 @@ import { billFromOrder, clampQty } from "@/lib/billing";
 import { sql, withTx } from "@/lib/db";
 import { ApiError, featureOn, json, readBody, wrap } from "@/lib/http";
 import { nid } from "@/lib/ids";
-import { openOrderForTable, pushNotice, rateForItem, tenantBundle, writeAudit } from "@/lib/queries";
+import { clearTableSession, openOrderForTable, pushNotice, rateForItem, restoreItemStock, tenantBundle, writeAudit } from "@/lib/queries";
 import type { OrderItem } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -214,6 +214,7 @@ export const POST = wrap(async (request: Request, ctx) => {
         `update orders set status = 'paid', closed_at = now(), bill_snapshot = $2::jsonb where id = $1`,
         [id, JSON.stringify({ ...bill, method, staff_id: staff.id, paid_at: new Date().toISOString() })],
       );
+      await clearTableSession(q, staff.tenant_id, order.table_id);
       await writeAudit(q, {
         tenantId: staff.tenant_id,
         staffId: staff.id,
@@ -222,7 +223,7 @@ export const POST = wrap(async (request: Request, ctx) => {
         entityId: id,
         after: { amount, method },
       });
-      return json({ ok: true, paid: amount, rounding });
+      return json({ ok: true, paid: amount, rounding, tableReset: true });
     });
   }
 
@@ -292,20 +293,36 @@ export const POST = wrap(async (request: Request, ctx) => {
     const line = lines[0];
     if (!line) return json({ error: "not_found" }, 404);
     if (body.cancel) {
+      const reason = String(body.cancelReason || "").trim().slice(0, 80);
+      if (reason.length < 2) return json({ error: "need_reason" }, 400);
       if (line.kitchen_status === "done" || line.kitchen_status === "served") {
         if (staff.role !== "admin") return json({ error: "need_admin" }, 403);
       }
-      await sql(
-        `update order_items set kitchen_status = 'cancelled', cancel_reason = $3 where id = $1 and order_id = $2`,
-        [body.itemId, id, (body.cancelReason || "staff").slice(0, 80)],
-      );
-      await pushNotice(sql, {
-        tenantId: staff.tenant_id,
-        kind: "cancel",
-        tableId: ticket.order.table_id,
-        orderId: id,
-        itemId: body.itemId,
-        message: `Hủy món ${line.name_snapshot}`,
+      if (line.kitchen_status === "cancelled" || line.kitchen_status === "86") {
+        return json({ error: "already_closed" }, 409);
+      }
+      await withTx(async (q) => {
+        await q(
+          `update order_items set kitchen_status = 'cancelled', cancel_reason = $3 where id = $1 and order_id = $2`,
+          [body.itemId, id, reason],
+        );
+        await restoreItemStock(q, staff.tenant_id, line.item_id, Number(line.qty));
+        await pushNotice(q, {
+          tenantId: staff.tenant_id,
+          kind: "cancel",
+          tableId: ticket.order.table_id,
+          orderId: id,
+          itemId: body.itemId,
+          message: `Hủy món ${line.name_snapshot} · ${reason}`,
+        });
+        await writeAudit(q, {
+          tenantId: staff.tenant_id,
+          staffId: staff.id,
+          action: "cancel_line",
+          entity: "order_item",
+          entityId: body.itemId,
+          after: { reason, kitchen_status: line.kitchen_status },
+        });
       });
     } else {
       const fields: string[] = [];
@@ -412,10 +429,16 @@ export const POST = wrap(async (request: Request, ctx) => {
         id,
         staff.tenant_id,
       ]);
-      await q(
-        `update order_items set kitchen_status = 'cancelled' where order_id = $1 and kitchen_status in ('queued','preparing')`,
+      const live = await q<{ item_id: string; qty: number }>(
+        `update order_items set kitchen_status = 'cancelled', cancel_reason = coalesce(cancel_reason, 'void')
+         where order_id = $1 and kitchen_status in ('queued','preparing')
+         returning item_id, qty`,
         [id],
       );
+      for (const row of live) {
+        await restoreItemStock(q, staff.tenant_id, row.item_id, Number(row.qty));
+      }
+      await clearTableSession(q, staff.tenant_id, ticket.order.table_id);
       await writeAudit(q, { tenantId: staff.tenant_id, staffId: staff.id, action: "void", entity: "order", entityId: id });
     });
   }

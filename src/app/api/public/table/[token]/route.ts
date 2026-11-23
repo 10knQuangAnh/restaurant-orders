@@ -2,18 +2,19 @@ import { nid } from "@/lib/ids";
 import { ApiError, featureOn, json, readBody, wrap } from "@/lib/http";
 import { sql, withTx } from "@/lib/db";
 import { clampQty } from "@/lib/billing";
-import { loadMenu, openOrderForTable, pushNotice, rateForItem, tableByToken } from "@/lib/queries";
+import { loadMenu, openOrderForTable, pushNotice, rateForItem, restoreItemStock, tableByToken } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type OrderBody = {
-  action?: "order" | "call" | "guest";
+  action?: "order" | "call" | "guest" | "cancel_line";
   items?: { itemId: string; unitId: string; qty: number; note?: string }[];
   guestName?: string;
   guestPhone?: string;
   note?: string;
   reason?: string;
+  itemId?: string;
 };
 
 export const GET = wrap(async (_request: Request, ctx) => {
@@ -74,6 +75,36 @@ export const POST = wrap(async (request: Request, ctx) => {
       );
     }
     return json({ ok: true });
+  }
+
+  if (action === "cancel_line") {
+    const itemId = String(body.itemId || "");
+    if (!itemId) return json({ error: "need_item" }, 400);
+    const open = await openOrderForTable(found.table.id, found.tenant.id);
+    if (!open) return json({ error: "not_found" }, 404);
+    const line = open.items.find((i) => i.id === itemId);
+    if (!line) return json({ error: "not_found" }, 404);
+    if (line.kitchen_status !== "queued") return json({ error: "already_sent" }, 409);
+    await withTx(async (q) => {
+      const n = await q<{ id: string; item_id: string; qty: number }>(
+        `update order_items set kitchen_status = 'cancelled', cancel_reason = 'guest'
+         where id = $1 and order_id = $2 and kitchen_status = 'queued'
+         returning id, item_id, qty`,
+        [itemId, open.order.id],
+      );
+      if (!n[0]) throw new ApiError(409, "already_sent");
+      await restoreItemStock(q, found.tenant.id, n[0].item_id, Number(n[0].qty));
+      await pushNotice(q, {
+        tenantId: found.tenant.id,
+        kind: "cancel",
+        tableId: found.table.id,
+        orderId: open.order.id,
+        itemId,
+        message: `${found.table.code} gỡ món ${line.name_snapshot}`,
+      });
+    });
+    const next = await openOrderForTable(found.table.id, found.tenant.id);
+    return json({ ok: true, ordered: next?.items ?? [] });
   }
 
   if (found.settings && !featureOn(found.settings.features, "guest_order")) {

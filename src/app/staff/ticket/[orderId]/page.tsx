@@ -56,6 +56,7 @@ export default function TicketPage() {
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState("");
   const [discount, setDiscount] = useState("");
+  const [cancelId, setCancelId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/staff/order/${orderId}`, { cache: "no-store" });
@@ -85,15 +86,28 @@ export default function TicketPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = (await res.json()) as { orderId?: string; paid?: number; error?: string };
+    const data = (await res.json()) as { orderId?: string; paid?: number; error?: string; tableReset?: boolean };
+    if (data.error === "need_reason") {
+      setMsg("Chọn lý do hủy món");
+      return;
+    }
+    if (data.error === "need_admin") {
+      setMsg("Món đã nấu xong — cần quản trị hủy.");
+      return;
+    }
     if (data.orderId && data.orderId !== orderId) {
       router.replace(`/staff/ticket/${data.orderId}`);
       return;
     }
     if (body.action === "pay") {
-      setMsg("Đã thu tiền");
+      setMsg("Đã thu · bàn trống, khách mới quét QR được");
       setPayOn(null);
-      router.replace("/staff/floor");
+      setTimeout(() => router.replace("/staff/floor?reset=1"), 1400);
+      return;
+    }
+    if (body.action === "void") {
+      setMsg("Đã hủy phiếu · bàn trống");
+      setTimeout(() => router.replace("/staff/floor"), 900);
       return;
     }
     await load();
@@ -164,14 +178,7 @@ export default function TicketPage() {
               <button className="k-start" onClick={() => void act({ action: "patch_item", itemId: it.id, complementary: !it.complementary })}>
                 Tặng
               </button>
-              <button
-                className="k-86"
-                onClick={() => {
-                  if (confirm("Hủy món này? Bếp sẽ được báo.")) {
-                    void act({ action: "patch_item", itemId: it.id, cancel: true, cancelReason: "staff" });
-                  }
-                }}
-              >
+              <button className="k-86" onClick={() => setCancelId(it.id)}>
                 Hủy
               </button>
               {splitOn && (
@@ -218,7 +225,14 @@ export default function TicketPage() {
           <button className="k-start" onClick={() => window.print()}>In tạm tính</button>
           <button className="k-done" onClick={() => setPayOn("cash")}>Tiền mặt</button>
           <button className="k-done" onClick={() => setPayOn("transfer")}>Chuyển khoản</button>
-          <button className="k-86" onClick={() => void act({ action: "void" })}>Hủy phiếu</button>
+          <button
+            className="k-86"
+            onClick={() => {
+              if (confirm("Hủy cả phiếu? Bàn sẽ trống cho khách mới.")) void act({ action: "void" });
+            }}
+          >
+            Hủy phiếu
+          </button>
         </div>
         {msg && <p className="ok-text">{msg}</p>}
       </div>
@@ -271,6 +285,31 @@ export default function TicketPage() {
                 {t.table.code} {t.table.name} {t.orderId ? "(gộp)" : ""}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {cancelId && (
+        <div className="modal-back" onClick={() => setCancelId(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ background: "#231c18", color: "#f6eee6" }}>
+            <h2>Lý do hủy món</h2>
+            <p className="muted">Bếp sẽ thấy phiếu hủy. Món đã nấu xong cần quản trị.</p>
+            <div className="kbtns">
+              {["Khách đổi ý", "Gọi nhầm", "Chờ lâu", "Hết món", "Khác"].map((reason) => (
+                <button
+                  key={reason}
+                  className="k-start"
+                  type="button"
+                  onClick={() => {
+                    const id = cancelId;
+                    setCancelId(null);
+                    void act({ action: "patch_item", itemId: id, cancel: true, cancelReason: reason });
+                  }}
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

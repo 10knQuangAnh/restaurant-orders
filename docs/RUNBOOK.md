@@ -15,6 +15,17 @@ Last verified: 2026-11-23 · Scope: operate a venue
 `npm run seed:demo` refused in production. Never put PINs in UI or README.
 Empty hosted Postgres: `POST /api/platform/seed` with `x-platform-secret` (409 if tenants already exist). Local PGlite seeds on first boot.
 
+## New restaurant from JSON
+Template: `seeds/templates/quan-sample.json` (slug, PIN, tables, categories, items). Copy and edit.
+
+Postgres:
+
+```bash
+DATABASE_URL=postgres://… npm run seed:tenant -- seeds/templates/quan-sample.json
+```
+
+Hosted: `POST /api/platform/tenants/import` with header `x-platform-secret` and the JSON body. 409 if slug exists. Then staff login slug → person → PIN. Print QR at `/staff/admin/tables`.
+
 ## Incidents
 - Locked PIN: wait 15 min or admin **Đặt lại PIN** (revokes sessions).
 - Double pay: second pay is 409; reports use `bill_snapshot` on `paid`.

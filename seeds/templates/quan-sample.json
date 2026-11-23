@@ -1,0 +1,46 @@
+{
+  "tenant": {
+    "slug": "quan-gio",
+    "name": "Quán Gió",
+    "primary_color": "#C2410C",
+    "accent_color": "#FFF1E6",
+    "phone": "028 7300 0102",
+    "address": "12 Nguyễn Thiện Thuật, Q.3, TP.HCM",
+    "hours": "10:00 – 22:00",
+    "tagline": "Cơm rang & nước mát"
+  },
+  "admin": { "name": "Lê Hoa", "pin": "2468" },
+  "staff": [
+    { "name": "Trần Minh", "role": "waiter", "pin": "1397" },
+    { "name": "Phạm Hùng", "role": "kitchen", "pin": "4466" }
+  ],
+  "settings": {
+    "vat_rate": 0.08,
+    "service_rate": 0.05,
+    "cash_round_to": 0,
+    "bank_name": "Vietcombank",
+    "bank_account": "0071000888888",
+    "bank_holder": "QUAN GIO"
+  },
+  "tables": [
+    { "code": "T1", "name": "TRỆT", "zone": "Trệt", "seats": 4 },
+    { "code": "T2", "name": "TRỆT", "zone": "Trệt", "seats": 4 },
+    { "code": "T3", "name": "LẦU", "zone": "Lầu", "seats": 6 }
+  ],
+  "categories": [
+    {
+      "name": "Cơm",
+      "items": [
+        { "name": "Cơm rang dưa bò", "name_en": "Beef fried rice", "price_dong": 69000, "unit": "Đĩa", "image_url": "/dishes/com-chien-dua-bo.svg" },
+        { "name": "Cơm gà hội an", "name_en": "Hoi An chicken rice", "price_dong": 65000, "unit": "Phần", "image_url": "/dishes/com-ga.svg" }
+      ]
+    },
+    {
+      "name": "Nước",
+      "items": [
+        { "name": "Trà đào", "name_en": "Peach tea", "price_dong": 39000, "unit": "Ly", "image_url": "/dishes/tra-dao.svg" },
+        { "name": "Nước mía", "name_en": "Sugarcane juice", "price_dong": 25000, "unit": "Ly", "image_url": "/dishes/nuoc-mia.svg", "tax_category": "food" }
+      ]
+    }
+  ]
+}

@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "seed:demo": "node scripts/seed-demo.mjs",
+    "seed:tenant": "node --experimental-strip-types scripts/seed-tenant.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:probe": "node tests/probe-audit.mjs"
   },

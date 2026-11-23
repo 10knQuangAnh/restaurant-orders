@@ -229,7 +229,7 @@ Quy tắc docs: mỗi file có dòng đầu `Last verified: <ngày> · Scope: <.
 ### 4.5 P1 — THỰC ĐƠN
 
 - [ ] **MENU-01 · Tùy chọn/topping/combo** · 🧩 GAP — hiện chỉ có biến thể (`item_units`) + ghi chú tự do. Cần nhóm tùy chọn (size, độ cay, đá/đường, topping) có phụ thu, bắt buộc/tùy chọn, min/max; combo/set menu (chọn món trong set); chip ghi chú nhanh.
-- [ ] **MENU-02 · CRUD admin đầy đủ** · 📖 CODE — API **không có** thêm/sửa/xóa/sắp xếp **danh mục**; API sửa được tên/mô tả/danh mục/giá đơn vị mặc định nhưng UI chỉ có "thêm món" + bật/tắt hết món; không thêm/xóa đơn vị; không xóa/lưu trữ món; không sửa/xóa bàn; không reset PIN; không upload ảnh. Cần đủ CRUD + kéo sắp xếp + import/export CSV/Excel + thẻ (cay/chay/hải sản) + dị ứng + tên đa ngôn ngữ + giờ bán (trưa/tối, bia hơi) + `tax_category` + trạm bếp.
+- [x] **MENU-02 · CRUD admin đầy đủ** · UI sửa món + upload ảnh + danh mục thêm/đổi tên/xóa (chuyển món). Chưa kéo sort / CSV / topping.
 - [ ] **MENU-03 · Món bán theo cân & đơn vị lớn** · 🧩 GAP · *rất đặc thù Việt Nam* — hải sản/lẩu bán theo **kg** (giá/kg, cân tại bàn, số lượng thập phân, cân xong mới chốt tiền), bia theo **két/thùng/chai**, món "theo con". `qty` hiện là số nguyên → cần `numeric(10,3)` + đơn vị cân + bước nhập "cân thực tế".
 - [ ] **MENU-04 · Giá theo giờ/khu (happy hour, phòng lạnh/sân vườn)** · P3.
 
@@ -253,7 +253,7 @@ Quy tắc docs: mỗi file có dòng đầu `Last verified: <ngày> · Scope: <.
 
 ### 4.8 P2 — QUẢN TRỊ & BÁO CÁO
 
-- [ ] **ADMIN-01 · Báo cáo** · 📖 CODE — hiện chỉ có "hôm nay" + top 8 (đếm cả đơn hủy/chưa trả/86, xem BILL-02, DATA-06). Cần: khoảng ngày, theo phương thức/món/nhóm/nhân viên/giờ, hủy-tặng-giảm giá (đối soát), AOV, vòng quay bàn, thời gian bếp, xuất CSV/Excel. Doanh thu chỉ tính đơn `paid`, đọc `bill_snapshot`.
+- [x] **ADMIN-01 · Báo cáo** · ngày/tuần/tháng + lọc from/to; doanh thu `paid` + `bill_snapshot`; AOV. Chưa CSV / theo nhân viên.
 - [ ] **ADMIN-02 · Nhật ký thao tác (audit log)** — bảng append-only: ai/lúc nào/làm gì/giá trị trước-sau cho hủy, tặng, giảm giá, đổi giá, đổi cài đặt, đăng nhập, reset PIN, mở/đóng ca.
 - [ ] **ADMIN-03 · Vai trò & quyền** — hiện cứng 3 role. Thêm quản lý/thu ngân/bưng bê + ma trận quyền cấu hình theo quán (ai được hủy/tặng/giảm giá/hoàn tiền, ngưỡng cần duyệt), duyệt bằng PIN quản lý.
 - [ ] **ADMIN-04 · Thương hiệu theo tenant** · 📖 CODE — `layout.tsx` hardcode `themeColor #E85D04` + tiêu đề "Gọi món tại bàn"; `manifest.webmanifest` tĩnh tên "Nhân viên nhà hàng"; `apple-touch-icon` là **SVG** (iOS thường cần PNG — L8, xác minh). Cần manifest/theme/icon **động theo tenant**, upload logo, màu (validate), giờ mở cửa (đã xác nhận: chỉ hiển thị ở đầu trang khách, không chặn đặt món khi đóng cửa), wifi, mạng xã hội, subdomain/domain riêng, mẫu **in QR bàn** (A5/A6 PDF có logo + số bàn), xoay QR.
@@ -265,7 +265,7 @@ Quy tắc docs: mỗi file có dòng đầu `Last verified: <ngày> · Scope: <.
 ### 4.9 P2 — WEB KHÁCH (QUÉT QR)
 
 - [ ] **GUEST-01 · Nhiều người cùng bàn** — giỏ hàng nằm ở `localStorage` từng máy (📖 CODE) → không chia sẻ; thấy toàn bộ món đã gọi của người khác nhưng không biết ai gọi. Cần giỏ chung theo phiên bàn (tùy chọn), "Lượt gọi 1, 2, …", hiện người gọi.
-- [x] **GUEST-02 · Trạng thái món & hủy** — poll 4s (pause hidden): chờ/đang làm/đã xong/đã mang ra/86. Chưa hủy N giây từ máy khách.
+- [x] **GUEST-02 · Trạng thái món & hủy** — poll 4s; **Gỡ món** khi `queued` (409 nếu bếp đã nhận).
 - [x] **GUEST-03 · Trang món** — nút EN/VI (`name_en`), hết món tag, poll 8s. Topping/combo vẫn MENU-01.
 - [ ] **GUEST-04 · Trợ năng** · 🔴 `maximumScale:1` trong `layout.tsx` **chặn zoom**; chữ 11px; chỉ 3 `aria-` trong trang menu; mục chạm ≥44px; tương phản; kiểm tra bằng axe.
 - [ ] **GUEST-05 · Trạng thái lỗi/trống** — QR sai/bàn đóng/quán đóng cửa/mất mạng/bấm đúp (idempotency).

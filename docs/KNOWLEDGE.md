@@ -18,3 +18,5 @@ Last verified: 2026-11-23 · Scope: bugs already paid for
 | Login 403 csrf on `127.0.0.1` | Next `request.url` origin is `localhost` while browser Origin is `127.0.0.1` | Treat loopback hosts as equivalent; also compare `Host` | browser POST from 127.0.0.1 with Origin header |
 | GitHub compare “unrelated histories” | Cloud branch vs empty/other main | User `git merge --abort` then force-push their HEAD to main | — |
 | publish-app refuses | Needs commit **and** origin push | User pushes; agent does not wait on GitHub MCP | — |
+| QR PNG link says localhost | Next `request.url` origin is localhost | Use `Host` / `x-forwarded-host` | tables page |
+| Món đã gọi blank after Gỡ last line | empty copy keyed off `items.length` including cancelled | Filter live lines | guest ordered |

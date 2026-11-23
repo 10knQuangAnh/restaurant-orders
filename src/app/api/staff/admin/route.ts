@@ -4,8 +4,9 @@ import { hashPin } from "@/lib/pin";
 import { sql } from "@/lib/db";
 import { ApiError, json, readBody, wrap } from "@/lib/http";
 import { nid } from "@/lib/ids";
+import { isSafeImageUrl, parseImagePayload, publicMediaPath } from "@/lib/media";
 import { loadMenu, tenantBundle, writeAudit } from "@/lib/queries";
-import { businessDate } from "@/lib/time";
+import { reportWindow } from "@/lib/time";
 import QRCode from "qrcode";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,9 @@ export const GET = wrap(async (request: Request) => {
   const url = new URL(request.url);
   const section = url.searchParams.get("section") || "overview";
   const bundle = await tenantBundle(staff.tenant_id);
-  const origin = url.origin;
+  const forwardedHost = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "").split(",")[0].trim();
+  const forwardedProto = (request.headers.get("x-forwarded-proto") || url.protocol.replace(":", "")).split(",")[0].trim();
+  const origin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : url.origin;
 
   if (section === "menu") {
     const menu = await loadMenu(staff.tenant_id, { includeInactive: true });
@@ -38,7 +41,7 @@ export const GET = wrap(async (request: Request) => {
       seats: number;
     }[]) {
       const link = `${origin}/t/${t.qr_token}`;
-      const qr = await QRCode.toDataURL(link, { margin: 1, width: 240 });
+      const qr = await QRCode.toDataURL(link, { margin: 1, width: 512 });
       withQr.push({ ...t, link, qr });
     }
     return json({ staff, tenant: bundle?.tenant, tables: withQr });
@@ -54,7 +57,16 @@ export const GET = wrap(async (request: Request) => {
     return json({ staff, tenant: bundle?.tenant, settings: bundle?.settings });
   }
   if (section === "reports") {
-    const day = businessDate(new Date(), bundle?.settings?.timezone || "Asia/Ho_Chi_Minh", 5);
+    const tzRaw = bundle?.settings?.timezone || "Asia/Ho_Chi_Minh";
+    const tz = /^[A-Za-z_+\-/]+$/.test(tzRaw) ? tzRaw : "Asia/Ho_Chi_Minh";
+    const cut = bundle?.settings?.day_cut_hour ?? 5;
+    const win = reportWindow({
+      kind: url.searchParams.get("range") || "day",
+      timeZone: tz,
+      cutHour: cut,
+      from: url.searchParams.get("from"),
+      to: url.searchParams.get("to"),
+    });
     const today = await sql<{ orders: number; revenue: number; cash: number; transfer: number }>(
       `select
          count(distinct o.id)::int as orders,
@@ -64,8 +76,8 @@ export const GET = wrap(async (request: Request) => {
        from orders o
        left join payments p on p.order_id = o.id
        where o.tenant_id = $1 and o.status = 'paid'
-         and ((o.closed_at at time zone 'Asia/Ho_Chi_Minh') - interval '5 hours')::date = $2::date`,
-      [staff.tenant_id, day],
+         and ((o.closed_at at time zone '${tz}') - ($3::int * interval '1 hour'))::date between $2::date and $4::date`,
+      [staff.tenant_id, win.from, cut, win.to],
     );
     const open = await sql<{ n: number; value: number }>(
       `select count(distinct o.id)::int as n,
@@ -80,10 +92,11 @@ export const GET = wrap(async (request: Request) => {
        from order_items oi
        join orders o on o.id = oi.order_id
        where o.tenant_id = $1 and o.status = 'paid' and oi.kitchen_status not in ('cancelled','86')
+         and ((o.closed_at at time zone '${tz}') - ($3::int * interval '1 hour'))::date between $2::date and $4::date
        group by oi.name_snapshot
        order by qty desc
        limit 8`,
-      [staff.tenant_id],
+      [staff.tenant_id, win.from, cut, win.to],
     );
     return json({
       staff,
@@ -91,7 +104,7 @@ export const GET = wrap(async (request: Request) => {
       today: today[0] ?? { orders: 0, revenue: 0, cash: 0, transfer: 0 },
       open: open[0] ?? { n: 0, value: 0 },
       top,
-      businessDate: day,
+      range: win,
     });
   }
 
@@ -186,9 +199,39 @@ export const POST = wrap(async (request: Request) => {
     ]);
   }
 
+  if (body.action === "upload_photo") {
+    const parsed = parseImagePayload(body.mime, body.data);
+    if (!parsed) throw new ApiError(400, "bad_image");
+    const photoId = nid("img");
+    await sql(`insert into media_files (id, tenant_id, kind, mime, bytes) values ($1,$2,'item_photo',$3,$4)`, [
+      photoId,
+      staff.tenant_id,
+      parsed.mime,
+      parsed.data,
+    ]);
+    const url = publicMediaPath(photoId);
+    if (body.itemId) {
+      const owned = await sql<{ id: string }>(`select id from items where id = $1 and tenant_id = $2`, [
+        body.itemId,
+        staff.tenant_id,
+      ]);
+      if (!owned[0]) throw new ApiError(404, "not_found");
+      await sql(`update items set image_url = $1 where id = $2 and tenant_id = $3`, [url, body.itemId, staff.tenant_id]);
+    }
+    return json({ ok: true, id: photoId, url });
+  }
+
   if (body.action === "save_item") {
     const name = String(body.name || "").trim().slice(0, 120);
     if (!name) throw new ApiError(400, "need_name");
+    const catId = String(body.category_id || "");
+    const cat = await sql<{ id: string }>(`select id from categories where id = $1 and tenant_id = $2`, [
+      catId,
+      staff.tenant_id,
+    ]);
+    if (!cat[0]) throw new ApiError(400, "bad_category");
+    const imageUrl = body.image_url == null ? null : String(body.image_url);
+    if (imageUrl && !isSafeImageUrl(imageUrl)) throw new ApiError(400, "bad_image_url");
     const itemId = (body.id as string) || nid("it");
     if (body.id) {
       const owned = await sql<{ id: string }>(`select id from items where id = $1 and tenant_id = $2`, [
@@ -197,15 +240,24 @@ export const POST = wrap(async (request: Request) => {
       ]);
       if (!owned[0]) throw new ApiError(404, "not_found");
       await sql(
-        `update items set name = $1, name_en = $2, description = $3, category_id = $4, active = $5
-         where id = $6 and tenant_id = $7`,
-        [name, body.name_en || null, body.description || null, body.category_id, body.active !== false, itemId, staff.tenant_id],
+        `update items set name = $1, name_en = $2, description = $3, category_id = $4, active = $5, image_url = coalesce($6, image_url)
+         where id = $7 and tenant_id = $8`,
+        [
+          name,
+          body.name_en || null,
+          body.description || null,
+          catId,
+          body.active !== false,
+          imageUrl,
+          itemId,
+          staff.tenant_id,
+        ],
       );
     } else {
       await sql(
         `insert into items (id, tenant_id, category_id, name, name_en, description, image_url, sort_order)
          values ($1,$2,$3,$4,$5,$6,$7,99)`,
-        [itemId, staff.tenant_id, body.category_id, name, body.name_en || null, body.description || null, "/dishes/com-chien-trung.svg"],
+        [itemId, staff.tenant_id, catId, name, body.name_en || null, body.description || null, imageUrl],
       );
       await sql(
         `insert into item_units (id, item_id, name, price_dong, is_default) values ($1,$2,$3,$4,true)`,
@@ -242,6 +294,35 @@ export const POST = wrap(async (request: Request) => {
       ]);
     }
     return json({ ok: true, id });
+  }
+
+  if (body.action === "delete_category") {
+    const id = String(body.id || "");
+    const owned = await sql<{ id: string }>(`select id from categories where id = $1 and tenant_id = $2`, [
+      id,
+      staff.tenant_id,
+    ]);
+    if (!owned[0]) throw new ApiError(404, "not_found");
+    const items = await sql<{ n: string }>(`select count(*)::text as n from items where category_id = $1 and tenant_id = $2`, [
+      id,
+      staff.tenant_id,
+    ]);
+    if (Number(items[0]?.n || 0) > 0) {
+      const moveTo = String(body.moveTo || "");
+      if (!moveTo || moveTo === id) throw new ApiError(400, "need_move");
+      const dest = await sql<{ id: string }>(`select id from categories where id = $1 and tenant_id = $2`, [
+        moveTo,
+        staff.tenant_id,
+      ]);
+      if (!dest[0]) throw new ApiError(400, "bad_category");
+      await sql(`update items set category_id = $1 where category_id = $2 and tenant_id = $3`, [
+        moveTo,
+        id,
+        staff.tenant_id,
+      ]);
+    }
+    await sql(`delete from categories where id = $1 and tenant_id = $2`, [id, staff.tenant_id]);
+    return json({ ok: true });
   }
 
   if (body.action === "add_table") {

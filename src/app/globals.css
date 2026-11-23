@@ -395,8 +395,30 @@ img { max-width: 100%; display: block; }
 }
 .inbox-item strong { font-size: 11px; text-transform: uppercase; color: #f97316; }
 
+.admin-thumb {
+  width: 56px; height: 56px; object-fit: cover; border-radius: 12px; background: #f3e6d8; flex: none;
+}
+.admin-thumb.placeholder {
+  display: grid; place-items: center; font-size: 11px; color: #8a7468; font-weight: 700;
+}
+.cat-edit {
+  display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; margin-top: 8px;
+}
+.cat-edit select { margin-top: 0; }
+.report-tabs {
+  display: flex; gap: 8px; padding: 0 12px 12px; flex-wrap: wrap;
+}
+.report-tabs button {
+  border: 1px solid #e6d5c6; background: #fff; border-radius: 999px; padding: 8px 14px; font-weight: 700; color: #1a120c;
+}
+.report-tabs button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.qr-grid { display: grid; gap: 0; }
+.qr-card img { image-rendering: pixelated; }
+
 @media print {
-  .staff-nav, .staff-top button, .kbtns, .inbox, .modal-back { display: none !important; }
-  .staff-root, .pay-box, .ticket-line { background: #fff !important; color: #000 !important; }
+  .staff-nav, .staff-top button, .kbtns, .inbox, .modal-back, .no-print { display: none !important; }
+  .staff-root, .pay-box, .ticket-line, .admin, .admin-card { background: #fff !important; color: #000 !important; }
   .pay-box { box-shadow: none; border: 1px solid #ccc; }
+  .qr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .qr-card { break-inside: avoid; border: 1px solid #ddd; }
 }

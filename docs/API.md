@@ -7,7 +7,8 @@ Auth staff: cookie `staff_session` HttpOnly; SameSite=Lax; Secure on HTTPS. Logi
 | GET | `/api/healthz` | public | `{ ok }` |
 | GET | `/api/readyz` | public | `{ ok, ready }` 503 if DB down |
 | GET | `/api/public/venue?slug=` | public | name + sample guest path |
-| GET/POST | `/api/public/table/[token]` | public | menu; order/call/guest. call 429 if open. inactive item 409. PII write-once |
+| GET/POST | `/api/public/table/[token]` | public | menu; order/call/guest/cancel_line (queued only, 409 already_sent). call 429 if open. inactive item 409. PII write-once |
+| GET | `/api/media/[id]` | public | item photo bytes |
 | GET | `/api/staff/session` | cookie | `{ staff: null }` if logged out |
 | GET | `/api/staff/floor` | admin,waiter | tables + calls + totals |
 | GET/POST | `/api/staff/kitchen` | admin,kitchen (served: +waiter) | op start/done/86/served; 409 bad_transition |
@@ -15,8 +16,9 @@ Auth staff: cookie `staff_session` HttpOnly; SameSite=Lax; Secure on HTTPS. Logi
 | GET | `/api/staff/menu` | staff | catalog |
 | GET/POST | `/api/staff/stock` | staff | 86 + stock_left |
 | GET/POST | `/api/staff/inbox` | staff | unread notices |
-| GET/POST | `/api/staff/admin` | admin | no `pin` in GET. `add_tenant` 403 |
+| GET/POST | `/api/staff/admin` | admin | no `pin` in GET. `add_tenant` 403. menu save/edit/upload_photo/save_category/delete_category. reports `range=day\|week\|month\|custom&from=&to=` |
 | POST | `/api/platform/tenants` | `x-platform-secret` | create tenant |
+| POST | `/api/platform/tenants/import` | `x-platform-secret` | JSON tenant (see `seeds/templates/quan-sample.json`) |
 | POST | `/api/platform/seed` | `x-platform-secret` | demo seed if tenants empty; 409 if already seeded |
 
 Errors: `{ error: code }` with 400/401/403/404/409/429. Write requests with foreign Origin → 403 csrf.

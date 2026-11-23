@@ -45,7 +45,7 @@ export async function tableByToken(token: string) {
   const row = tables[0];
   if (!row) return null;
   const settingsRows = await sql<TenantSettings>(
-    `select tenant_id, vat_rate, vat_included, service_rate, cash_round_to, bank_name, bank_account, bank_holder, features, timezone
+    `select tenant_id, vat_rate, vat_included, service_rate, cash_round_to, bank_name, bank_account, bank_holder, features, timezone, day_cut_hour
      from tenant_settings where tenant_id = $1`,
     [row.tenant_id],
   );
@@ -85,6 +85,7 @@ function mapSettings(settings: TenantSettings): TenantSettings {
     vat_included: bool(settings.vat_included),
     cash_round_to: num(settings.cash_round_to),
     features: features(settings.features),
+    day_cut_hour: settings.day_cut_hour == null ? 5 : num(settings.day_cut_hour),
   };
 }
 
@@ -96,7 +97,7 @@ export async function tenantBundle(tenantId: string) {
   const tenant = tenants[0];
   if (!tenant) return null;
   const settingsRows = await sql<TenantSettings>(
-    `select tenant_id, vat_rate, vat_included, service_rate, cash_round_to, bank_name, bank_account, bank_holder, features, timezone
+    `select tenant_id, vat_rate, vat_included, service_rate, cash_round_to, bank_name, bank_account, bank_holder, features, timezone, day_cut_hour
      from tenant_settings where tenant_id = $1`,
     [tenantId],
   );
@@ -152,7 +153,8 @@ export async function loadMenu(
     });
     byItem.set(u.item_id, list);
   }
-  const items: MenuItem[] = itemRows.map((it) => {
+  const catIds = new Set(categories.map((c) => c.id));
+  const items: MenuItem[] = itemRows.filter((it) => opts.includeInactive || catIds.has(it.category_id)).map((it) => {
     const stock = it.stock_left == null ? null : num(it.stock_left);
     const soldOut = bool(it.sold_out) || (stock != null && stock <= 0);
     return {
@@ -331,6 +333,24 @@ export async function pushNotice(
     `insert into notifications (id, tenant_id, kind, table_id, order_id, item_id, message)
      values ($1,$2,$3,$4,$5,$6,$7)`,
     [nid("nt"), row.tenantId, row.kind, row.tableId ?? null, row.orderId ?? null, row.itemId ?? null, row.message],
+  );
+}
+
+export async function clearTableSession(q: QueryFn, tenantId: string, tableId: string) {
+  await q(
+    `update staff_calls set status = 'ack', ack_at = now() where tenant_id = $1 and table_id = $2 and status = 'open'`,
+    [tenantId, tableId],
+  );
+}
+
+export async function restoreItemStock(q: QueryFn, tenantId: string, itemId: string, qty: number) {
+  if (qty <= 0) return;
+  await q(
+    `update items
+        set stock_left = case when stock_left is null then null else stock_left + $1 end,
+            sold_out = case when stock_left is null then sold_out else (stock_left + $1) <= 0 end
+      where id = $2 and tenant_id = $3`,
+    [qty, itemId, tenantId],
   );
 }
 

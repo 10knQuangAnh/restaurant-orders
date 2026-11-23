@@ -10,6 +10,7 @@ npm run typecheck && npm run lint && npm test
 env -u DATABASE_URL npm run dev & npm run test:probe   # API regression
 ```
 Postgres: `docker compose up -d db` then `DATABASE_URL=postgres://print:print@127.0.0.1:5432/printorder npm run build` then `npm run seed:demo` (blocked when `NODE_ENV=production` unless `ALLOW_DEMO_SEED=1`).
+New venue: `DATABASE_URL=… npm run seed:tenant -- seeds/templates/quan-sample.json`
 
 ## Layout
 - `src/app/api/public/*` guest QR
