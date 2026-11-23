@@ -17,6 +17,7 @@ npm run test:regression
 npm run test:ops
 npx playwright install chromium
 npm run test:browser
+npm run test:directory # browser mocks for 404, 500, 503 and network failure; no DB fixture required
 TEST_DATABASE_URL=postgres://… npm run test:database
 ```
 

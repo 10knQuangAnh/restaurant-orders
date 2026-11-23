@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 const dest: Record<string, string> = {
   admin: "/staff/admin",
@@ -21,6 +21,8 @@ function StaffLoginInner() {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingDirectory, setLoadingDirectory] = useState(false);
+  const directoryRequest = useRef<AbortController | null>(null);
   const [who, setWho] = useState("");
 
   useEffect(() => {
@@ -35,29 +37,56 @@ function StaffLoginInner() {
         staff?: { name: string; role: string } | null;
       };
       if (data.staff) setWho(`${data.staff.name} · ${data.staff.role}`);
-    })();
+    })().catch(() => {
+      /* Directory lookup displays the connection error. */
+    });
+    return () => directoryRequest.current?.abort();
   }, [params]);
 
   async function loadDir(nextSlug: string) {
+    directoryRequest.current?.abort();
+    const controller = new AbortController();
+    directoryRequest.current = controller;
     setErr("");
     setStaffId("");
     setPin("");
-    const res = await fetch(`/api/staff/directory?slug=${encodeURIComponent(nextSlug.trim().toLowerCase())}`, {
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      setPeople([]);
-      setTenantName("");
-      setErr("Không tìm thấy quán");
+    setPeople([]);
+    setTenantName("");
+    const normalizedSlug = nextSlug.trim().toLowerCase();
+    if (!normalizedSlug) {
+      setErr("Nhập mã quán để tiếp tục.");
+      setLoadingDirectory(false);
       return;
     }
-    const data = (await res.json()) as {
-      tenant: { name: string; slug: string };
-      people: Person[];
-    };
-    setTenantName(data.tenant.name);
-    setPeople(data.people);
-    localStorage.setItem("venue_slug", data.tenant.slug);
+    setLoadingDirectory(true);
+    try {
+      const res = await fetch(`/api/staff/directory?slug=${encodeURIComponent(normalizedSlug)}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      if (!res.ok) {
+        if (res.status === 404) setErr("Không tìm thấy quán");
+        else if (res.status === 503) setErr("Dịch vụ dữ liệu đang không sẵn sàng. Vui lòng thử lại sau.");
+        else if (res.status >= 500) setErr("Máy chủ đang gặp lỗi. Vui lòng thử lại sau.");
+        else setErr("Không tải được danh sách nhân viên. Vui lòng thử lại.");
+        return;
+      }
+      const data = (await res.json()) as { tenant: { name: string; slug: string }; people: Person[] };
+      if (controller.signal.aborted) return;
+      setSlug(data.tenant.slug);
+      setTenantName(data.tenant.name);
+      setPeople(data.people);
+      try {
+        localStorage.setItem("venue_slug", data.tenant.slug);
+      } catch {
+        /* Storage may be disabled. */
+      }
+    } catch {
+      if (!controller.signal.aborted) setErr("Không kết nối được máy chủ. Kiểm tra mạng và thử lại.");
+    } finally {
+      if (directoryRequest.current === controller) setLoadingDirectory(false);
+    }
   }
 
   async function submit(next: string) {
@@ -135,6 +164,9 @@ function StaffLoginInner() {
             placeholder="Mã quán (slug)"
             value={slug}
             onChange={(e) => {
+              directoryRequest.current?.abort();
+              setLoadingDirectory(false);
+              setErr("");
               setSlug(e.target.value);
               setStaffId("");
               setPeople([]);
@@ -144,8 +176,13 @@ function StaffLoginInner() {
             autoCapitalize="none"
             autoCorrect="off"
           />
-          <button className="cta" type="submit" style={{ width: "auto", padding: "0 16px" }}>
-            Mở
+          <button
+            className="cta"
+            type="submit"
+            disabled={loadingDirectory}
+            style={{ width: "auto", padding: "0 16px" }}
+          >
+            {loadingDirectory ? "Đang tải…" : "Mở"}
           </button>
         </form>
         {people.length > 0 && (
@@ -202,7 +239,11 @@ function StaffLoginInner() {
             </button>
           </>
         )}
-        {err && <p className="err">{err}</p>}
+        {err && (
+          <p className="err" role="alert">
+            {err}
+          </p>
+        )}
         {who && (
           <p className="muted" style={{ marginTop: 20 }}>
             Đang có phiên: {who}{" "}

@@ -31,6 +31,7 @@ DATABASE_URL=postgres://… npm run seed:tenant -- seeds/templates/quan-sample.j
 Hosted: `POST /api/platform/tenants/import` with header `x-platform-secret` and the JSON body. 409 if slug exists. Then staff login slug → person → PIN. Print QR at `/staff/admin/tables`.
 
 ## Incidents
+- Login displays “Không tìm thấy quán”: check `GET /api/staff/directory?slug=…` and `/api/readyz` separately. Directory 404 means absent tenant; directory 500 plus readiness 503 means a database/bootstrap failure, not evidence that the slug is wrong. In Vercel, check runtime logs and the Production PostgreSQL environment variables, then redeploy after correcting environment configuration. Do not seed or replace an existing database to resolve a connection failure. Once readiness is 200, investigate missing tenant data only if directory returns 404.
 - Locked PIN: wait 15 min or admin **Đặt lại PIN** (revokes sessions).
 - Double pay: second pay is 409; reports use `bill_snapshot` on `paid`.
 - Wrong tenant table: APIs 404, no merge.
