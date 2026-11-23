@@ -60,3 +60,14 @@ export function migratePostgresUrl() {
     process.env.POSTGRES_URL,
   );
 }
+
+/** Neon/Vercel require TLS; pg sslmode=require may verify-full and fail. */
+export function pgClientSsl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return undefined;
+  } catch {
+    return { rejectUnauthorized: false };
+  }
+  return { rejectUnauthorized: false };
+}

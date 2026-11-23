@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import pg from "pg";
-import { migratePostgresUrl } from "../src/lib/postgresUrl.mjs";
+import { migratePostgresUrl, pgClientSsl } from "../src/lib/postgresUrl.mjs";
 
 const url = migratePostgresUrl();
 const files = (await readdir("migrations").catch(() => []))
@@ -18,7 +18,7 @@ if (!url || files.length === 0) {
   process.exit(0);
 }
 
-const client = new pg.Client({ connectionString: url });
+const client = new pg.Client({ connectionString: url, ssl: pgClientSsl(url) });
 try {
   await client.connect();
 } catch (error) {

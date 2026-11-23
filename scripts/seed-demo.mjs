@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { randomBytes, scryptSync } from "node:crypto";
 import pg from "pg";
-import { usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
+import { pgClientSsl, usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
 
 if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "1") {
   console.error("seed:demo blocked when NODE_ENV=production (set ALLOW_DEMO_SEED=1 to override)");
@@ -23,7 +23,7 @@ function hashPin(pin, salt = randomBytes(16).toString("hex")) {
   return `${salt}:${scryptSync(pin, salt, 32).toString("hex")}`;
 }
 
-const client = new pg.Client({ connectionString: url });
+const client = new pg.Client({ connectionString: url, ssl: pgClientSsl(url) });
 await client.connect();
 try {
   const files = (await readdir("seeds")).filter((f) => f.endsWith(".sql")).sort();

@@ -75,7 +75,7 @@ export function wrap(handler: (request: Request, ctx?: unknown) => Promise<Respo
       return await handler(request, ctx);
     } catch (error) {
       if (error instanceof ApiError) return json({ error: error.code }, error.status);
-      console.error("api_error");
+      console.error("api_error", error);
       return json({ error: "server" }, 500);
     }
   };

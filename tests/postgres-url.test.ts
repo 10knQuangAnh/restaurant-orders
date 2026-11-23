@@ -3,7 +3,8 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { normalizePostgresUrl, usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
+import { bundledSql } from "../src/lib/bundledSql.ts";
+import { normalizePostgresUrl, pgClientSsl, usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -38,6 +39,21 @@ describe("normalizePostgresUrl", () => {
   it("skips a bad candidate then uses POSTGRES_URL", () => {
     const real = "postgres://u:p@ep-x.neon.tech/neondb";
     assert.equal(usablePostgresUrl("POSTGRES_URL", real), real);
+  });
+});
+
+describe("bundled SQL", () => {
+  it("includes demo table token t9-tu-do", () => {
+    const text = bundledSql.seeds.map((f) => f.sql).join("\n");
+    assert.match(text, /t9-tu-do/);
+    assert.ok(bundledSql.migrations.some((f) => f.name === "001_schema.sql"));
+  });
+});
+
+describe("pgClientSsl", () => {
+  it("skips TLS on localhost and enables it for Neon", () => {
+    assert.equal(pgClientSsl("postgres://print:print@127.0.0.1:5432/printorder"), undefined);
+    assert.deepEqual(pgClientSsl("postgresql://u:p@ep-x.neon.tech/neondb"), { rejectUnauthorized: false });
   });
 });
 

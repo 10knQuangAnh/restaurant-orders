@@ -42,7 +42,7 @@ export default function MenuPage() {
   const load = useCallback(async () => {
     const res = await fetch(`/api/public/table/${token}`, { cache: "no-store" });
     if (!res.ok) {
-      setErr("Không tìm thấy bàn.");
+      setErr(res.status >= 500 ? "Quán chưa kết nối được dữ liệu. Thử tải lại trang." : "Không tìm thấy bàn.");
       return;
     }
     setData((await res.json()) as Payload);

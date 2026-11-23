@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { randomBytes, scryptSync } from "node:crypto";
 import pg from "pg";
 import { parseTenantSpec } from "../src/lib/tenantSpec.ts";
-import { usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
+import { pgClientSsl, usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
 
 const file = process.argv[2];
 if (!file) {
@@ -30,7 +30,7 @@ function hashPin(pin, salt = randomBytes(16).toString("hex")) {
 }
 
 const spec = parseTenantSpec(JSON.parse(await readFile(file, "utf8")));
-const client = new pg.Client({ connectionString: url });
+const client = new pg.Client({ connectionString: url, ssl: pgClientSsl(url) });
 await client.connect();
 try {
   const taken = await client.query("select id from tenants where slug = $1", [spec.tenant.slug]);
