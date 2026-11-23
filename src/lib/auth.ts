@@ -1,88 +1,122 @@
-import { getIdentity } from "../../cursor/identity";
-import { clearSessionCookie, readCookie, sessionCookie } from "./cookies";
+import { cookies } from "next/headers";
 import { sql } from "./db";
+import { json } from "./http";
 import { nid } from "./ids";
-import type { Staff } from "./types";
+import { STAFF_COOKIE } from "./cookies";
+import { hashPin, hashToken, newSessionToken, verifyPin } from "./pin";
+import type { Role, Staff } from "./types";
 
-type StaffRow = Staff & { pin?: string };
+const LOCK_AFTER = 5;
+const LOCK_MS = 15 * 60 * 1000;
 
-export async function staffById(id: string): Promise<Staff | null> {
-  const rows = await sql<Staff>(
-    `select id, tenant_id, name, role, identity_email, active from staff where id = $1 and active = true`,
-    [id],
+export type StaffContext = Staff & { tenant_id: string; session_id: string };
+
+function cookieToken(request: Request): string | undefined {
+  const raw = request.headers.get("cookie") || "";
+  const hit = raw.split(";").map((p) => p.trim()).find((p) => p.startsWith(`${STAFF_COOKIE}=`));
+  return hit?.slice(STAFF_COOKIE.length + 1);
+}
+
+export async function currentStaff(request?: Request): Promise<StaffContext | null> {
+  const token = request ? cookieToken(request) : (await cookies()).get(STAFF_COOKIE)?.value;
+  if (!token) return null;
+  const hashed = hashToken(token);
+  const rows = await sql<StaffContext>(
+    `select st.id as session_id, s.id, s.tenant_id, s.name, s.role, s.active, s.identity_email
+     from staff_sessions st
+     join staff s on s.id = st.staff_id
+     where st.token = $1 and st.revoked = false and st.expires_at > now()
+       and s.active = true`,
+    [hashed],
   );
   return rows[0] ?? null;
 }
 
-export async function loginWithPin(pin: string): Promise<{ staff: Staff; token: string } | null> {
-  const cleaned = pin.replace(/\D/g, "").slice(0, 8);
-  if (cleaned.length < 4) return null;
-  const rows = await sql<StaffRow>(
-    `select id, tenant_id, name, role, identity_email, active from staff where pin = $1 and active = true limit 1`,
-    [cleaned],
-  );
-  const staff = rows[0];
-  if (!staff) return null;
-  const token = nid("ses");
-  await sql(
-    `insert into staff_sessions (id, staff_id, token, expires_at) values ($1, $2, $3, now() + interval '12 hours')`,
-    [nid("sid"), staff.id, token],
-  );
-  return { staff, token };
-}
-
-export async function sessionFromRequest(request: Request): Promise<Staff | null> {
-  const token = readCookie(request.headers.get("cookie"), "staff_session");
-  if (token) {
-    const rows = await sql<Staff>(
-      `select s.id, s.tenant_id, s.name, s.role, s.identity_email, s.active
-       from staff_sessions ss
-       join staff s on s.id = ss.staff_id
-       where ss.token = $1 and ss.expires_at > now() and s.active = true
-       limit 1`,
-      [token],
-    );
-    if (rows[0]) return rows[0];
-  }
-
-  const identity = await getIdentity(request);
-  if (!identity.verified || identity.kind !== "person") return null;
-  const email = identity.email?.trim().toLowerCase();
-  if (!email) return null;
-  const mapped = await sql<Staff>(
-    `select id, tenant_id, name, role, identity_email, active
-     from staff where lower(identity_email) = $1 and active = true limit 1`,
-    [email],
-  );
-  return mapped[0] ?? null;
-}
-
-export async function requireStaff(
-  request: Request,
-  roles?: Staff["role"][],
-): Promise<Staff | Response> {
-  const staff = await sessionFromRequest(request);
-  if (!staff) {
-    return Response.json(
-      { error: "unauthorized" },
-      { status: 401, headers: { "cache-control": "private, no-store" } },
-    );
-  }
-  if (roles && !roles.includes(staff.role)) {
-    return Response.json(
-      { error: "forbidden", role: staff.role },
-      { status: 403, headers: { "cache-control": "private, no-store" } },
-    );
-  }
+export async function requireStaff(request: Request, roles?: Role[]): Promise<StaffContext | Response> {
+  const staff = await currentStaff(request);
+  if (!staff) return json({ error: "unauth" }, 401);
+  if (roles && !roles.includes(staff.role)) return json({ error: "forbidden" }, 403);
   return staff;
 }
 
-export function withSessionHeaders(token?: string): HeadersInit {
-  const headers: Record<string, string> = { "cache-control": "private, no-store" };
-  if (token) headers["set-cookie"] = sessionCookie(token);
-  return headers;
+export async function loginWithPin(opts: {
+  slug: string;
+  staffId: string;
+  pin: string;
+}): Promise<{ staff: StaffContext; token: string } | { error: string; status: number }> {
+  const slug = opts.slug.trim().toLowerCase();
+  const pin = opts.pin.trim();
+  if (!slug || !opts.staffId || !/^\d{4,8}$/.test(pin)) {
+    return { error: "bad_login", status: 400 };
+  }
+  const tenants = await sql<{ id: string }>(`select id from tenants where slug = $1`, [slug]);
+  const tenant = tenants[0];
+  if (!tenant) return { error: "unknown_tenant", status: 404 };
+
+  const people = await sql<{
+    id: string;
+    tenant_id: string;
+    name: string;
+    role: Role;
+    pin: string;
+    pin_hash: string | null;
+    failed_attempts: number;
+    locked_until: string | null;
+    active: boolean;
+  }>(
+    `select id, tenant_id, name, role, pin, pin_hash, failed_attempts, locked_until, active
+     from staff where id = $1 and tenant_id = $2`,
+    [opts.staffId, tenant.id],
+  );
+  const person = people[0];
+  if (!person || !person.active) return { error: "unknown_staff", status: 404 };
+
+  if (person.locked_until && new Date(person.locked_until).getTime() > Date.now()) {
+    return { error: "locked", status: 429 };
+  }
+
+  let ok = false;
+  if (person.pin_hash) ok = verifyPin(pin, person.pin_hash);
+  else ok = person.pin === pin;
+  if (!ok) {
+    const next = Number(person.failed_attempts || 0) + 1;
+    const locked = next >= LOCK_AFTER ? new Date(Date.now() + LOCK_MS).toISOString() : null;
+    await sql(`update staff set failed_attempts = $1, locked_until = $2 where id = $3`, [
+      next,
+      locked,
+      person.id,
+    ]);
+    return { error: "bad_pin", status: 401 };
+  }
+
+  if (!person.pin_hash) {
+    await sql(`update staff set pin_hash = $1 where id = $2`, [hashPin(pin), person.id]);
+  }
+  await sql(`update staff set failed_attempts = 0, locked_until = null where id = $1`, [person.id]);
+
+  const token = newSessionToken();
+  const sessionId = nid("ses");
+  await sql(
+    `insert into staff_sessions (id, staff_id, token, expires_at)
+     values ($1,$2,$3, now() + interval '12 hours')`,
+    [sessionId, person.id, hashToken(token)],
+  );
+  return {
+    token,
+    staff: {
+      session_id: sessionId,
+      id: person.id,
+      tenant_id: person.tenant_id,
+      name: person.name,
+      role: person.role,
+      identity_email: null,
+      active: true,
+    },
+  };
 }
 
-export function logoutHeaders(): HeadersInit {
-  return { "cache-control": "private, no-store", "set-cookie": clearSessionCookie() };
+export async function logoutSession(request: Request): Promise<void> {
+  const token = cookieToken(request);
+  if (!token) return;
+  await sql(`update staff_sessions set revoked = true where token = $1`, [hashToken(token)]);
 }

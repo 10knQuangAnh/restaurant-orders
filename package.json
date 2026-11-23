@@ -6,7 +6,11 @@
     "dev": "next dev -p 3000 -H 127.0.0.1",
     "build": "next build && node scripts/migrate.mjs",
     "start": "next start -p 3000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "seed:demo": "node scripts/seed-demo.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:probe": "node tests/probe-audit.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",

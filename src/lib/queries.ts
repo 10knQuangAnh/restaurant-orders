@@ -1,5 +1,6 @@
-import { sql } from "./db";
-import { computeBill } from "./money";
+import { sql, type QueryFn } from "./db";
+import { billFromOrder } from "./billing";
+import { pickTaxRate, type TaxRateRow, ymdInZone } from "./time";
 import type {
   Category,
   DiningTable,
@@ -72,16 +73,18 @@ export async function tableByToken(token: string) {
       seats: row.seats,
     } satisfies DiningTable,
     tenant,
-    settings: settings
-      ? {
-          ...settings,
-          vat_rate: num(settings.vat_rate),
-          service_rate: num(settings.service_rate),
-          vat_included: bool(settings.vat_included),
-          cash_round_to: num(settings.cash_round_to),
-          features: features(settings.features),
-        }
-      : null,
+    settings: settings ? mapSettings(settings) : null,
+  };
+}
+
+function mapSettings(settings: TenantSettings): TenantSettings {
+  return {
+    ...settings,
+    vat_rate: num(settings.vat_rate),
+    service_rate: num(settings.service_rate),
+    vat_included: bool(settings.vat_included),
+    cash_round_to: num(settings.cash_round_to),
+    features: features(settings.features),
   };
 }
 
@@ -100,22 +103,16 @@ export async function tenantBundle(tenantId: string) {
   const settings = settingsRows[0];
   return {
     tenant,
-    settings: settings
-      ? {
-          ...settings,
-          vat_rate: num(settings.vat_rate),
-          service_rate: num(settings.service_rate),
-          vat_included: bool(settings.vat_included),
-          cash_round_to: num(settings.cash_round_to),
-          features: features(settings.features),
-        }
-      : null,
+    settings: settings ? mapSettings(settings) : null,
   };
 }
 
-export async function loadMenu(tenantId: string): Promise<{ categories: Category[]; items: MenuItem[] }> {
+export async function loadMenu(
+  tenantId: string,
+  opts: { includeInactive?: boolean } = {},
+): Promise<{ categories: Category[]; items: MenuItem[] }> {
   const categories = await sql<Category>(
-    `select id, name, sort_order from categories where tenant_id = $1 and active = true order by sort_order, name`,
+    `select id, name, sort_order from categories where tenant_id = $1 ${opts.includeInactive ? "" : "and active = true"} order by sort_order, name`,
     [tenantId],
   );
   const itemRows = await sql<{
@@ -126,9 +123,13 @@ export async function loadMenu(tenantId: string): Promise<{ categories: Category
     description: string | null;
     image_url: string | null;
     sold_out: boolean;
+    active: boolean;
+    stock_left: number | null;
+    daily_limit: number | null;
+    tax_category: string;
   }>(
-    `select id, category_id, name, name_en, description, image_url, sold_out
-     from items where tenant_id = $1 and active = true
+    `select id, category_id, name, name_en, description, image_url, sold_out, active, stock_left, daily_limit, tax_category
+     from items where tenant_id = $1 ${opts.includeInactive ? "" : "and active = true"}
      order by sort_order, name`,
     [tenantId],
   );
@@ -151,26 +152,38 @@ export async function loadMenu(tenantId: string): Promise<{ categories: Category
     });
     byItem.set(u.item_id, list);
   }
-  const items: MenuItem[] = itemRows.map((it) => ({
-    ...it,
-    sold_out: bool(it.sold_out),
-    units: byItem.get(it.id) ?? [],
-  }));
+  const items: MenuItem[] = itemRows.map((it) => {
+    const stock = it.stock_left == null ? null : num(it.stock_left);
+    const soldOut = bool(it.sold_out) || (stock != null && stock <= 0);
+    return {
+      ...it,
+      sold_out: soldOut,
+      active: bool(it.active),
+      stock_left: stock,
+      daily_limit: it.daily_limit == null ? null : num(it.daily_limit),
+      tax_category: it.tax_category || "food",
+      units: byItem.get(it.id) ?? [],
+    };
+  });
   return { categories, items };
 }
 
-export async function openOrderForTable(tableId: string) {
+export async function openOrderForTable(tableId: string, tenantId?: string) {
   const rows = await sql<Order>(
-    `select id, tenant_id, table_id, status, guest_name, guest_phone, guest_note,
+    tenantId
+      ? `select id, tenant_id, table_id, status, guest_name, guest_phone, guest_note,
             vat_rate, vat_included, service_rate, discount_dong, created_at
-     from orders where table_id = $1 and status = 'open' order by created_at desc limit 1`,
-    [tableId],
+         from orders where table_id = $1 and tenant_id = $2 and status = 'open' order by created_at desc limit 1`
+      : `select id, tenant_id, table_id, status, guest_name, guest_phone, guest_note,
+            vat_rate, vat_included, service_rate, discount_dong, created_at
+         from orders where table_id = $1 and status = 'open' order by created_at desc limit 1`,
+    tenantId ? [tableId, tenantId] : [tableId],
   );
   const order = rows[0];
   if (!order) return null;
   const items = await sql<OrderItem>(
     `select id, order_id, item_id, unit_id, name_snapshot, unit_snapshot, unit_price_dong, qty, note,
-            rush, complementary, kitchen_status, sent_at, started_at, done_at, created_at
+            rush, complementary, kitchen_status, sent_at, started_at, done_at, created_at, vat_rate, original_price_dong
      from order_items where order_id = $1 order by created_at`,
     [order.id],
   );
@@ -182,13 +195,19 @@ export async function openOrderForTable(tableId: string) {
       vat_included: bool(order.vat_included),
       discount_dong: num(order.discount_dong),
     },
-    items: items.map((it) => ({
-      ...it,
-      unit_price_dong: num(it.unit_price_dong),
-      qty: num(it.qty),
-      rush: bool(it.rush),
-      complementary: bool(it.complementary),
-    })),
+    items: items.map(mapItem),
+  };
+}
+
+function mapItem(it: OrderItem): OrderItem {
+  return {
+    ...it,
+    unit_price_dong: num(it.unit_price_dong),
+    qty: num(it.qty),
+    rush: bool(it.rush),
+    complementary: bool(it.complementary),
+    vat_rate: it.vat_rate == null ? null : num(it.vat_rate),
+    original_price_dong: it.original_price_dong == null ? num(it.unit_price_dong) : num(it.original_price_dong),
   };
 }
 
@@ -197,14 +216,7 @@ export function billFor(
   settings: { vat_rate: number; vat_included: boolean; service_rate: number; cash_round_to: number },
   discount = 0,
 ) {
-  return computeBill({
-    lines: items,
-    vatRate: settings.vat_rate,
-    vatIncluded: settings.vat_included,
-    serviceRate: settings.service_rate,
-    discount,
-    cashRoundTo: settings.cash_round_to,
-  });
+  return billFromOrder(items, settings, discount);
 }
 
 export async function floorState(tenantId: string) {
@@ -221,13 +233,15 @@ export async function floorState(tenantId: string) {
     item_count: number;
     queued: number;
     preparing: number;
+    ready: number;
   }>(
     `select o.id, o.table_id, o.guest_name, o.created_at,
-            coalesce(sum(i.qty), 0) as item_count,
+            coalesce(sum(case when i.kitchen_status not in ('cancelled','86') then i.qty else 0 end), 0) as item_count,
             coalesce(sum(case when i.kitchen_status = 'queued' then i.qty else 0 end), 0) as queued,
-            coalesce(sum(case when i.kitchen_status = 'preparing' then i.qty else 0 end), 0) as preparing
+            coalesce(sum(case when i.kitchen_status = 'preparing' then i.qty else 0 end), 0) as preparing,
+            coalesce(sum(case when i.kitchen_status = 'done' then i.qty else 0 end), 0) as ready
      from orders o
-     left join order_items i on i.order_id = o.id and i.kitchen_status <> 'cancelled'
+     left join order_items i on i.order_id = o.id
      where o.tenant_id = $1 and o.status = 'open'
      group by o.id, o.table_id, o.guest_name, o.created_at`,
     [tenantId],
@@ -272,5 +286,79 @@ export async function kitchenQueue(tenantId: string) {
        and oi.kitchen_status in ('queued', 'preparing')
      order by oi.rush desc, oi.sent_at nulls last, oi.created_at`,
     [tenantId],
+  );
+}
+
+export async function rateForItem(
+  q: QueryFn,
+  tenantId: string,
+  taxCategory: string,
+  fallback: number,
+  asOf = new Date(),
+): Promise<number> {
+  const ymd = ymdInZone(asOf);
+  const rows = await q<TaxRateRow>(
+    `select code, rate, effective_from::text, effective_to::text from tax_rates
+     where tenant_id = $1 and code = $2`,
+    [tenantId, taxCategory],
+  );
+  return pickTaxRate(
+    rows.map((r) => ({
+      code: r.code,
+      rate: num(r.rate),
+      effective_from: String(r.effective_from),
+      effective_to: r.effective_to ? String(r.effective_to) : null,
+    })),
+    taxCategory,
+    ymd,
+    fallback,
+  );
+}
+
+export async function pushNotice(
+  q: QueryFn,
+  row: {
+    tenantId: string;
+    kind: string;
+    message: string;
+    tableId?: string | null;
+    orderId?: string | null;
+    itemId?: string | null;
+  },
+) {
+  const { nid } = await import("./ids");
+  await q(
+    `insert into notifications (id, tenant_id, kind, table_id, order_id, item_id, message)
+     values ($1,$2,$3,$4,$5,$6,$7)`,
+    [nid("nt"), row.tenantId, row.kind, row.tableId ?? null, row.orderId ?? null, row.itemId ?? null, row.message],
+  );
+}
+
+export async function writeAudit(
+  q: QueryFn,
+  row: {
+    tenantId: string;
+    staffId?: string | null;
+    action: string;
+    entity?: string;
+    entityId?: string;
+    before?: unknown;
+    after?: unknown;
+  },
+) {
+  const { nid } = await import("./ids");
+  await q(
+    `insert into audit_log (id, tenant_id, staff_id, action, entity, entity_id, before_json, after_json)
+     values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)`,
+    [
+      nid("aud"),
+      row.tenantId,
+      row.staffId ?? null,
+      row.action,
+      row.entity ?? null,
+      row.entityId ?? null,
+      row.before ? JSON.stringify(row.before) : null,
+      row.after ? JSON.stringify(row.after) : null,
+    ],
   );
 }

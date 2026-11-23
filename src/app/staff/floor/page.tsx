@@ -1,5 +1,6 @@
 "use client";
 
+import { InboxBell } from "@/components/staff/InboxBell";
 import { StaffNav } from "@/components/staff/Nav";
 import { formatVnd } from "@/lib/money";
 import { useRouter } from "next/navigation";
@@ -24,6 +25,7 @@ export default function FloorPage() {
   const [tenant, setTenant] = useState<{ name: string; primary_color?: string } | null>(null);
 
   const load = useCallback(async () => {
+    if (typeof document !== "undefined" && document.hidden) return;
     const res = await fetch("/api/staff/floor", { cache: "no-store" });
     if (res.status === 401) {
       router.replace("/staff");
@@ -42,7 +44,14 @@ export default function FloorPage() {
   useEffect(() => {
     void load();
     const t = setInterval(() => void load(), 4000);
-    return () => clearInterval(t);
+    const vis = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", vis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", vis);
+    };
   }, [load]);
 
   async function openTable(card: Card) {
@@ -77,15 +86,18 @@ export default function FloorPage() {
           <div className="who">{tenant?.name} · {staff?.name}</div>
           <h1>Sàn bàn</h1>
         </div>
-        <button
-          className="linkish"
-          onClick={async () => {
-            await fetch("/api/staff/session", { method: "DELETE" });
-            router.replace("/staff");
-          }}
-        >
-          Kết ca
-        </button>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <InboxBell />
+          <button
+            className="linkish"
+            onClick={async () => {
+              await fetch("/api/staff/session", { method: "DELETE" });
+              router.replace("/staff");
+            }}
+          >
+            Kết ca
+          </button>
+        </div>
       </header>
       {calls.map((c) => (
         <div className="call-banner" key={c.call!.id}>

@@ -24,11 +24,13 @@ export type TenantSettings = {
   timezone: string;
 };
 
+export type Role = "admin" | "waiter" | "kitchen";
+
 export type Staff = {
   id: string;
   tenant_id: string;
   name: string;
-  role: "admin" | "waiter" | "kitchen";
+  role: Role;
   identity_email: string | null;
   active: boolean;
 };
@@ -57,6 +59,10 @@ export type MenuItem = {
   description: string | null;
   image_url: string | null;
   sold_out: boolean;
+  active?: boolean;
+  stock_left?: number | null;
+  daily_limit?: number | null;
+  tax_category?: string;
   units: ItemUnit[];
 };
 
@@ -99,6 +105,8 @@ export type OrderItem = {
   started_at: string | null;
   done_at: string | null;
   created_at: string;
+  vat_rate?: number | null;
+  original_price_dong?: number | null;
 };
 
 export type CartLine = {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 const dest: Record<string, string> = {
   admin: "/staff/admin",
@@ -9,29 +9,68 @@ const dest: Record<string, string> = {
   kitchen: "/staff/kitchen",
 };
 
-export default function StaffLogin() {
+type Person = { id: string; name: string; role: string };
+
+function StaffLoginInner() {
   const router = useRouter();
+  const params = useSearchParams();
+  const [slug, setSlug] = useState("");
+  const [tenantName, setTenantName] = useState("");
+  const [people, setPeople] = useState<Person[]>([]);
+  const [staffId, setStaffId] = useState("");
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [who, setWho] = useState("");
 
   useEffect(() => {
+    const q = params.get("slug") || localStorage.getItem("venue_slug") || "";
+    if (q) {
+      setSlug(q);
+      void loadDir(q);
+    }
     void (async () => {
       const res = await fetch("/api/staff/session", { cache: "no-store" });
       const data = (await res.json()) as { staff?: { name: string; role: string } | null };
-      if (data.staff) setWho(`${data.staff.name} (${data.staff.role})`);
+      if (data.staff) setWho(`${data.staff.name} · ${data.staff.role}`);
     })();
-  }, []);
+  }, [params]);
+
+  async function loadDir(nextSlug: string) {
+    setErr("");
+    const res = await fetch(`/api/staff/directory?slug=${encodeURIComponent(nextSlug.trim().toLowerCase())}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      setPeople([]);
+      setTenantName("");
+      setErr("Không tìm thấy quán");
+      return;
+    }
+    const data = (await res.json()) as { tenant: { name: string; slug: string }; people: Person[] };
+    setTenantName(data.tenant.name);
+    setPeople(data.people);
+    localStorage.setItem("venue_slug", data.tenant.slug);
+  }
 
   async function submit(next: string) {
-    if (next.length < 4) return;
+    if (next.length < 4 || !staffId) return;
     const res = await fetch("/api/staff/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ pin: next }),
+      body: JSON.stringify({ slug: slug.trim().toLowerCase(), staffId, pin: next }),
     });
+    if (res.status === 429) {
+      setErr("Tài khoản bị khóa tạm. Thử lại sau.");
+      setPin("");
+      return;
+    }
+    if (res.status === 403) {
+      setErr("Không gửi được từ địa chỉ này. Mở đúng cổng quán.");
+      setPin("");
+      return;
+    }
     if (!res.ok) {
-      setErr("Sai mã PIN");
+      setErr("Sai PIN");
       setPin("");
       return;
     }
@@ -41,9 +80,14 @@ export default function StaffLogin() {
 
   function tap(d: string) {
     setErr("");
-    const next = (pin + d).slice(0, 4);
+    const next = (pin + d).slice(0, 6);
     setPin(next);
-    if (next.length === 4) void submit(next);
+    if (next.length >= 4 && staffId) void submit(next);
+  }
+
+  async function logout() {
+    await fetch("/api/staff/session", { method: "DELETE" });
+    setWho("");
   }
 
   return (
@@ -52,44 +96,89 @@ export default function StaffLogin() {
         <p className="who" style={{ color: "#8a7468", letterSpacing: "0.14em", textTransform: "uppercase", fontSize: 12 }}>
           Vào ca
         </p>
-        <h1>Nhập PIN nhân viên</h1>
-        <p className="muted" style={{ color: "#b9a396" }}>
-          Demo Quán Tự Do: Lan 2580 · Minh 1397 · Hùng 4466
-        </p>
-        {who && <p className="muted">Đã nhận diện {who}</p>}
-        <div className="pin-dots">
-          {[0, 1, 2, 3].map((i) => (
-            <i key={i} className={pin.length > i ? "on" : ""} />
-          ))}
-        </div>
-        <div className="pad">
-          {["1", "2", "3", "4", "5", "6", "7", "8", "9", "←", "0", "C"].map((d) => (
-            <button
-              key={d}
-              onClick={() => {
-                if (d === "C") setPin("");
-                else if (d === "←") setPin((p) => p.slice(0, -1));
-                else tap(d);
-              }}
-            >
-              {d}
-            </button>
-          ))}
-        </div>
+        <h1>{tenantName || "Chọn quán"}</h1>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void loadDir(slug);
+          }}
+          style={{ display: "flex", gap: 8, margin: "12px 0 20px" }}
+        >
+          <input
+            className="field"
+            placeholder="Mã quán (slug)"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
+          <button className="cta" type="submit" style={{ width: "auto", padding: "0 16px" }}>
+            Mở
+          </button>
+        </form>
+        {people.length > 0 && (
+          <div className="staff-pick">
+            {people.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={staffId === p.id ? "on" : ""}
+                onClick={() => {
+                  setStaffId(p.id);
+                  setPin("");
+                  setErr("");
+                }}
+              >
+                <strong>{p.name}</strong>
+                <span>{p.role === "admin" ? "Quản trị" : p.role === "kitchen" ? "Bếp" : "Phục vụ"}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {staffId && (
+          <>
+            <p className="muted" style={{ color: "#b9a396" }}>
+              Nhập PIN của bạn
+            </p>
+            <div className="pin-dots">
+              {[0, 1, 2, 3].map((i) => (
+                <i key={i} className={pin.length > i ? "on" : ""} />
+              ))}
+            </div>
+            <div className="pad">
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9", "←", "0", "C"].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => {
+                    if (d === "C") setPin("");
+                    else if (d === "←") setPin((p) => p.slice(0, -1));
+                    else tap(d);
+                  }}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         {err && <p className="err">{err}</p>}
         {who && (
-          <button
-            type="button"
-            style={{ marginTop: 28, background: "none", border: 0, color: "#8a7468", fontSize: 12 }}
-            onClick={() => {
-              const role = who.includes("admin") ? "admin" : who.includes("kitchen") ? "kitchen" : "waiter";
-              router.push(dest[role]);
-            }}
-          >
-            Phiên Cursor: {who}
-          </button>
+          <p className="muted" style={{ marginTop: 20 }}>
+            Đang có phiên: {who}{" "}
+            <button type="button" className="linkish" onClick={() => void logout()}>
+              Kết ca
+            </button>
+          </p>
         )}
       </div>
     </main>
+  );
+}
+
+export default function StaffLogin() {
+  return (
+    <Suspense fallback={<main className="staff-root" />}>
+      <StaffLoginInner />
+    </Suspense>
   );
 }

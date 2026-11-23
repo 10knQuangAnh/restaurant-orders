@@ -44,7 +44,7 @@ export default function TicketPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const router = useRouter();
   const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [bill, setBill] = useState<{ subtotal: number; vat: number; service: number; total: number; cashTotal: number } | null>(null);
+  const [bill, setBill] = useState<{ subtotal: number; vat: number; service: number; discount?: number; total: number; cashTotal: number } | null>(null);
   const [settings, setSettings] = useState<{ bank_name?: string; bank_account?: string; bank_holder?: string } | null>(null);
   const [staff, setStaff] = useState<{ role: string; name: string } | null>(null);
   const [menu, setMenu] = useState<MenuItem[]>([]);
@@ -55,6 +55,7 @@ export default function TicketPage() {
   const [splitOn, setSplitOn] = useState(false);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState("");
+  const [discount, setDiscount] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/staff/order/${orderId}`, { cache: "no-store" });
@@ -163,7 +164,14 @@ export default function TicketPage() {
               <button className="k-start" onClick={() => void act({ action: "patch_item", itemId: it.id, complementary: !it.complementary })}>
                 Tặng
               </button>
-              <button className="k-86" onClick={() => void act({ action: "patch_item", itemId: it.id, cancel: true })}>
+              <button
+                className="k-86"
+                onClick={() => {
+                  if (confirm("Hủy món này? Bếp sẽ được báo.")) {
+                    void act({ action: "patch_item", itemId: it.id, cancel: true, cancelReason: "staff" });
+                  }
+                }}
+              >
                 Hủy
               </button>
               {splitOn && (
@@ -183,10 +191,24 @@ export default function TicketPage() {
         <div className="row-between"><span>Tạm tính</span><span>{formatVnd(bill.subtotal)}</span></div>
         <div className="row-between muted"><span>VAT (gồm)</span><span>{formatVnd(bill.vat)}</span></div>
         <div className="row-between muted"><span>Phí phục vụ</span><span>{formatVnd(bill.service)}</span></div>
+        <div className="row-between muted"><span>Giảm giá</span><span>{formatVnd(bill.discount || 0)}</span></div>
         <div className="row-between" style={{ marginTop: 8, fontWeight: 800 }}>
           <span>Phải thu</span><span>{formatVnd(bill.total)}</span>
         </div>
-        <div className="muted">Tiền mặt làm tròn {formatVnd(bill.cashTotal)}</div>
+        <div className="muted">Tiền mặt {formatVnd(bill.cashTotal)}</div>
+        <div className="kbtns" style={{ marginTop: 10 }}>
+          <input
+            className="field"
+            style={{ flex: 1, height: 40, margin: 0 }}
+            inputMode="numeric"
+            placeholder="Giảm giá (đ)"
+            value={discount}
+            onChange={(e) => setDiscount(e.target.value)}
+          />
+          <button className="k-start" onClick={() => void act({ action: "discount", amount: Number(discount || 0) })}>
+            Áp giảm
+          </button>
+        </div>
         <div className="kbtns" style={{ marginTop: 12 }}>
           <button className="k-start" onClick={() => void loadMenu()}>Thêm món</button>
           <button className="k-start" onClick={() => { setSplitOn((s) => !s); void loadTables(); }}>Tách</button>

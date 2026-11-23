@@ -1,5 +1,6 @@
 "use client";
 
+import { InboxBell } from "@/components/staff/InboxBell";
 import { StaffNav } from "@/components/staff/Nav";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -34,6 +35,7 @@ export default function KitchenPage() {
   const [now, setNow] = useState(Date.now());
 
   const load = useCallback(async () => {
+    if (typeof document !== "undefined" && document.hidden) return;
     const res = await fetch("/api/staff/kitchen", { cache: "no-store" });
     if (res.status === 401) {
       router.replace("/staff");
@@ -53,9 +55,26 @@ export default function KitchenPage() {
     void load();
     const a = setInterval(() => void load(), 3000);
     const b = setInterval(() => setNow(Date.now()), 15000);
+    const vis = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", vis);
+    let lock: { release: () => Promise<void> } | null = null;
+    void (async () => {
+      try {
+        const nav = navigator as Navigator & {
+          wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
+        };
+        lock = (await nav.wakeLock?.request("screen")) ?? null;
+      } catch {
+        /* ignore */
+      }
+    })();
     return () => {
       clearInterval(a);
       clearInterval(b);
+      document.removeEventListener("visibilitychange", vis);
+      void lock?.release();
     };
   }, [load]);
 
@@ -86,7 +105,10 @@ export default function KitchenPage() {
           <div className="who">{tenant?.name} · bếp · {staff?.name}</div>
           <h1>Hàng đợi</h1>
         </div>
-        <span style={{ color: "#b9a396" }}>{tickets.length} món</span>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ color: "#b9a396" }}>{tickets.length} món</span>
+          <InboxBell />
+        </div>
       </header>
       {groups.length === 0 && <p style={{ padding: 24, color: "#b9a396" }}>Bếp trống.</p>}
       {groups.map((lines) => {

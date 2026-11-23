@@ -14,17 +14,17 @@ insert into tenant_settings (
   tenant_id, vat_rate, vat_included, service_rate, cash_round_to,
   bank_name, bank_account, bank_holder, features
 ) values (
-  'td', 0.08, true, 0.05, 1000,
+  'td', 0.08, true, 0.05, 0,
   'Vietcombank', '0071000888888', 'QUAN TU DO',
   '{"guest_order":true,"call_staff":true,"kitchen":true,"vat":true,"service_charge":true,"split_bill":true,"transfer_table":true,"complementary":true,"takeaway":false}'::jsonb
 ) on conflict (tenant_id) do nothing;
 
-insert into staff (id, tenant_id, name, pin, role, identity_email, active) values
-  ('td-lan', 'td', 'Nguyễn Thị Lan', '2580', 'admin', 'dev@example.com', true),
-  ('td-minh', 'td', 'Trần Văn Minh', '1397', 'waiter', null, true),
-  ('td-hoa', 'td', 'Lê Thị Hoa', '2468', 'waiter', null, true),
-  ('td-hung', 'td', 'Phạm Hùng', '4466', 'kitchen', null, true),
-  ('td-duc', 'td', 'Võ Văn Đức', '7788', 'kitchen', null, true)
+insert into staff (id, tenant_id, name, pin, role, active) values
+  ('td-lan', 'td', 'Nguyễn Thị Lan', '2580', 'admin', true),
+  ('td-minh', 'td', 'Trần Văn Minh', '1397', 'waiter', true),
+  ('td-hoa', 'td', 'Lê Thị Hoa', '2468', 'waiter', true),
+  ('td-hung', 'td', 'Phạm Hùng', '4466', 'kitchen', true),
+  ('td-duc', 'td', 'Võ Văn Đức', '7788', 'kitchen', true)
 on conflict (id) do nothing;
 
 insert into dining_tables (id, tenant_id, code, name, qr_token, zone, seats, sort_order) values

@@ -3,11 +3,12 @@
 import { StaffNav } from "@/components/staff/Nav";
 import { useEffect, useState } from "react";
 
-type Person = { id: string; name: string; role: string; pin: string; identity_email: string | null; active: boolean };
+type Person = { id: string; name: string; role: string; identity_email: string | null; active: boolean };
 
 export default function AdminStaff() {
   const [people, setPeople] = useState<Person[]>([]);
-  const [form, setForm] = useState({ name: "", pin: "", role: "waiter", identity_email: "" });
+  const [form, setForm] = useState({ name: "", pin: "", role: "waiter" });
+  const [msg, setMsg] = useState("");
 
   async function load() {
     const res = await fetch("/api/staff/admin?section=staff", { cache: "no-store" });
@@ -23,35 +24,37 @@ export default function AdminStaff() {
       <section className="admin-card">
         <b>Thêm ca</b>
         <input placeholder="Tên" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <input placeholder="PIN 4 số" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
+        <input placeholder="PIN mới (4–8 số)" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value })} />
         <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
           <option value="admin">Admin</option>
           <option value="waiter">Nhân viên bàn</option>
           <option value="kitchen">Bếp</option>
         </select>
-        <input placeholder="Email Cursor (tuỳ chọn)" value={form.identity_email} onChange={(e) => setForm({ ...form, identity_email: e.target.value })} />
         <button
           className="cta"
           style={{ marginTop: 10 }}
           onClick={async () => {
-            await fetch("/api/staff/admin", {
+            const res = await fetch("/api/staff/admin", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ action: "add_staff", ...form }),
             });
-            setForm({ name: "", pin: "", role: "waiter", identity_email: "" });
+            const data = (await res.json()) as { error?: string };
+            setMsg(data.error === "pin_taken" ? "PIN đã dùng trong quán" : res.ok ? "Đã thêm" : "Không thêm được");
+            setForm({ name: "", pin: "", role: "waiter" });
             await load();
           }}
         >
           Lưu
         </button>
+        {msg && <p className="muted">{msg}</p>}
       </section>
       {people.map((p) => (
         <div className="admin-card" key={p.id}>
           <div className="row-between">
             <div>
               <strong>{p.name}</strong>
-              <div className="muted">{p.role} · PIN {p.pin}{p.identity_email ? ` · ${p.identity_email}` : ""}</div>
+              <div className="muted">{p.role}{p.active ? "" : " · nghỉ"}</div>
             </div>
             <button
               className="linkish"
@@ -67,6 +70,21 @@ export default function AdminStaff() {
               {p.active ? "Nghỉ" : "Mở"}
             </button>
           </div>
+          <button
+            className="linkish"
+            onClick={async () => {
+              const pin = prompt("PIN mới (4–8 số)");
+              if (!pin) return;
+              const res = await fetch("/api/staff/admin", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ action: "reset_pin", id: p.id, pin }),
+              });
+              setMsg(res.ok ? `Đã reset PIN ${p.name}` : "Không reset được");
+            }}
+          >
+            Đặt lại PIN
+          </button>
         </div>
       ))}
       <StaffNav role="admin" />
