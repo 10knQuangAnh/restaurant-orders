@@ -4,8 +4,10 @@ Last verified: 2026-11-23 · Scope: QR guest, staff PWA, API, PostgreSQL, produc
 
 - Checked `https://restaurant-orders-dun.vercel.app` using mobile Chromium and read-only requests.
 - `/api/readyz` returned 200, `ready: true`; staff directory and QR menu loaded.
-- Without a session, `/staff/admin/staff` and `/staff/admin/tables` crashed with `undefined.map`; settings crashed with `undefined.name`; reports crashed with `undefined.orders`.
-- No business data was changed on Vercel. Fixes are in the working tree; this audit does not deploy them.
+- Before the fixes, unauthenticated `/staff/admin/staff` and `/staff/admin/tables` crashed with `undefined.map`; settings crashed with `undefined.name`; reports crashed with `undefined.orders`. Protected screens now redirect to login.
+- Follow-up production incident: Vercel had an invalid `DATABASE_URL` and no attached database. Connected Neon Free in Singapore, initialized its empty database in a transaction, and deployed through `main`.
+- Real concurrent QA then reproduced a migration lock leak through Neon's transaction pooler. Runtime and CLI now use `pg_advisory_xact_lock` within one transaction; five simultaneous bootstraps through the actual Neon pooler passed without leaving locks.
+- `test:deployment` and `test:live-ops` passed on the Vercel URL. All write tests used separate temporary QA venues. Both QA venues were removed afterward; the original demo counts remained 2 venues, 8 staff, 52 items and 14 tables.
 
 ## Fixed defects
 
@@ -30,7 +32,7 @@ Last verified: 2026-11-23 · Scope: QR guest, staff PWA, API, PostgreSQL, produc
 | Concurrent wrong PINs lost failed-attempt increments | Lock staff row in authentication transaction; 12 attempts yield five wrong-PIN responses then seven locked responses |
 | Menu edit lost unit name and reactivated hidden items | Persist unit label, preserve existing active flag when omitted, respect active on insertion |
 | PGlite transactions shared manual BEGIN/COMMIT across requests | Use PGlite's serialized transaction callback |
-| Runtime retained PostgreSQL migration advisory lock in pool | Unlock before releasing client; direct PostgreSQL lock test passes after boot |
+| Runtime retained PostgreSQL migration advisory lock in pool | Transaction-scoped lock and shared atomic bootstrap for runtime/CLI; actual Neon concurrent bootstrap and lock-release checks pass |
 | Production build with real PostgreSQL failed in migration filter | Correct loop variable; full production build and repeat migration CLI pass |
 | Production silently used memory / automatically seeded demo | Require persistent DB; opt-in production demo seed; fresh DB has zero tenants and missing DB readiness returns 503 |
 | Platform creation/admin multistep writes could commit partially | Use one transaction for related writes |
@@ -41,17 +43,19 @@ PostCSS references: [path traversal advisory](https://github.com/advisories/GHSA
 
 ## Verification
 
-- `npm run typecheck`, `npm run lint` (currently both run TypeScript), `npm test`: 50 tests pass.
+- `npm run typecheck`, `npm run lint` (currently both run TypeScript), `npm test`: 60 tests pass.
 - Production build against isolated PostgreSQL 14; production servers with populated DB, empty DB, and missing DB.
 - Existing probe: 32 checks pass. Operations flow: QR PNG, reports, category CRUD, photo upload, item edit, guest/staff cancellation and table reset pass.
 - New API regression: 20 scenarios; database suite: repeat migration plus five invariants; platform: creation/import and authentication checks.
 - Browser: mobile login, failed-payment handling, authenticated/unauthenticated route sweep, guest order/cancellation, select-lines-before-destination split flow.
 - PGlite development mode: API regression, legacy probe and operations flow also pass.
+- Production Vercel/Neon: real admin/waiter/kitchen sessions, role isolation, 10 concurrent staff calls, 5 concurrent orders against 3 stock portions, write-once guest details, kitchen state machine, 86/cancellation billing, 10 concurrent payments producing one settlement, split/transfer/merge, discounts, void, QR PNG and reports all pass in isolated QA venues.
+- Real mobile Chromium: guest selects dish and submits cart, waiter logs in with an 8-digit PIN, insufficient cash is blocked, cash payment succeeds and frees the table; no runtime errors. Public demo staff/menu screens and unauthenticated admin redirects also pass.
 - Run API suites sequentially; fixtures use generated tables/people and modify demo stock/settings.
 
 ## Limits
 
-- No Vercel deployment or production write tests were performed.
+- Production write tests covered isolated QA venues; existing demo data was retained.
 - Real iPhone Safari/Android/iPad, thermal printer, physical payment/bank webhook and third-party invoice integration still need their respective devices/accounts.
 - Existing legal/accounting questions in `docs/BACKLOG.md` remain outside these functional fixes.
 - Tenant writes are serialized for consistency; this is not a sustained-load benchmark.
