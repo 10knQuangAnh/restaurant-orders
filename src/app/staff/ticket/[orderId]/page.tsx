@@ -215,6 +215,7 @@ export default function TicketPage() {
           <button className="k-start" onClick={() => void loadTables()}>Chuyển/Gộp</button>
         </div>
         <div className="kbtns">
+          <button className="k-start" onClick={() => window.print()}>In tạm tính</button>
           <button className="k-done" onClick={() => setPayOn("cash")}>Tiền mặt</button>
           <button className="k-done" onClick={() => setPayOn("transfer")}>Chuyển khoản</button>
           <button className="k-86" onClick={() => void act({ action: "void" })}>Hủy phiếu</button>

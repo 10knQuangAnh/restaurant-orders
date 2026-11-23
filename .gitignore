@@ -8,3 +8,7 @@ out
 data
 agent-tools
 tsconfig.tsbuildinfo
+*.bundle
+*.patch
+staff-session-hardening-1500.bundle
+staff-session-hardening-1500.patch

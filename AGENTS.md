@@ -14,7 +14,8 @@ Postgres: `docker compose up -d db` then `DATABASE_URL=postgres://print:print@12
 ## Layout
 - `src/app/api/public/*` guest QR
 - `src/app/api/staff/*` cookie session (slug → staff → PIN)
-- `src/app/api/platform/tenants` `x-platform-secret`
+- `src/app/api/platform/{tenants,seed}` `x-platform-secret`
+- `GET /api/healthz` · `GET /api/readyz`
 - `src/lib/{auth,billing,money,kds,db,queries,pin,time}.ts`
 - `migrations/` schema only · `seeds/` demo only
 - `tests/probe-audit.mjs` REPRO ids A1–G1

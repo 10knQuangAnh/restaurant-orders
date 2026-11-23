@@ -28,6 +28,16 @@ export default function MenuPage() {
   const [guestOpen, setGuestOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [callOk, setCallOk] = useState(false);
+  const [en, setEn] = useState(false);
+  const [callReason, setCallReason] = useState("staff");
+  const [consent, setConsent] = useState(false);
+
+  const callReasons = [
+    ["staff", "Gọi NV"],
+    ["water", "Thêm nước"],
+    ["bill", "Thanh toán"],
+    ["ask", "Hỏi món"],
+  ] as const;
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/public/table/${token}`, { cache: "no-store" });
@@ -40,6 +50,13 @@ export default function MenuPage() {
 
   useEffect(() => {
     void load();
+    const poll = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 8000);
+    const vis = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", vis);
     setCart(readCart(token));
     try {
       const g = JSON.parse(localStorage.getItem(guestKey(token)) || "{}") as { name?: string; phone?: string };
@@ -47,6 +64,10 @@ export default function MenuPage() {
     } catch {
       /* ignore */
     }
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", vis);
+    };
   }, [load, token]);
 
   useEffect(() => {
@@ -93,6 +114,7 @@ export default function MenuPage() {
   }
 
   async function saveGuest() {
+    if (!consent) return;
     localStorage.setItem(guestKey(token), JSON.stringify(guest));
     await fetch(`/api/public/table/${token}`, {
       method: "POST",
@@ -103,10 +125,11 @@ export default function MenuPage() {
   }
 
   async function callStaff() {
+    const reason = callReasons.find((r) => r[0] === callReason)?.[1] || "Gọi NV";
     await fetch(`/api/public/table/${token}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "call", reason: "staff" }),
+      body: JSON.stringify({ action: "call", reason }),
     });
     setCallOpen(false);
     setCallOk(true);
@@ -142,6 +165,14 @@ export default function MenuPage() {
         {data.tenant.hours && (
           <p style={{ margin: "4px 0 0", fontSize: 12, opacity: 0.92 }}>{data.tenant.hours}</p>
         )}
+        <button
+          type="button"
+          className="lang-toggle"
+          onClick={() => setEn((v) => !v)}
+          aria-label="Đổi ngôn ngữ"
+        >
+          {en ? "VI" : "EN"}
+        </button>
       </header>
       <div className="action-row">
         <button className="search-btn" aria-label="Tìm món" onClick={() => setSearchOn(true)}>
@@ -204,12 +235,16 @@ export default function MenuPage() {
               if (grid) {
                 return (
                   <article key={item.id} className={`grid-card ${item.sold_out ? "sold" : ""}`}>
-                    <img src={item.image_url || ""} alt="" onClick={() => router.push(`/t/${token}/item/${item.id}`)} />
+                    <img
+                      src={item.image_url || ""}
+                      alt={en && item.name_en ? item.name_en : item.name}
+                      onClick={() => router.push(`/t/${token}/item/${item.id}`)}
+                    />
                     <button className="plus" disabled={item.sold_out} onClick={() => quickAdd(item)}>
                       +
                     </button>
                     <div className="body" onClick={() => router.push(`/t/${token}/item/${item.id}`)}>
-                      <h3>{item.name}</h3>
+                      <h3>{en && item.name_en ? item.name_en : item.name}</h3>
                       {item.sold_out ? <div className="sold-tag">Hết món</div> : <div className="price">{formatVnd(u?.price_dong || 0)}</div>}
                     </div>
                   </article>
@@ -217,9 +252,13 @@ export default function MenuPage() {
               }
               return (
                 <article key={item.id} className={`item-row ${item.sold_out ? "sold" : ""}`}>
-                  <img src={item.image_url || ""} alt="" onClick={() => router.push(`/t/${token}/item/${item.id}`)} />
+                  <img
+                    src={item.image_url || ""}
+                    alt={en && item.name_en ? item.name_en : item.name}
+                    onClick={() => router.push(`/t/${token}/item/${item.id}`)}
+                  />
                   <div onClick={() => router.push(`/t/${token}/item/${item.id}`)}>
-                    <h3>{item.name}</h3>
+                    <h3>{en && item.name_en ? item.name_en : item.name}</h3>
                     {item.sold_out ? <div className="sold-tag">Hết món</div> : <div className="price">{formatVnd(u?.price_dong || 0)}</div>}
                   </div>
                   <button className="plus" disabled={item.sold_out} onClick={() => quickAdd(item)}>
@@ -254,9 +293,14 @@ export default function MenuPage() {
         <div className="modal-back" onClick={() => setGuestOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ textAlign: "left" }}>
             <h2>Thông tin của bạn</h2>
+            <p className="muted">Tên và SĐT chỉ dùng để quán gọi khi mang món. Không chia sẻ ngoài nhà hàng.</p>
             <input className="field" placeholder="Tên" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
             <input className="field" placeholder="Số điện thoại" value={guest.phone} onChange={(e) => setGuest({ ...guest, phone: e.target.value })} />
-            <button className="cta" style={{ marginTop: 14 }} onClick={() => void saveGuest()}>
+            <label className="muted" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, fontSize: 13 }}>
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+              Tôi đồng ý lưu thông tin này trên phiếu bàn.
+            </label>
+            <button className="cta" style={{ marginTop: 14 }} disabled={!consent || !guest.name.trim()} onClick={() => void saveGuest()}>
               Lưu
             </button>
           </div>
@@ -268,6 +312,18 @@ export default function MenuPage() {
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <h2>Gọi nhân viên</h2>
             <p className="muted">Nhân viên bàn sẽ nhận tín hiệu từ {data.table.code}.</p>
+            <div className="kbtns" style={{ margin: "12px 0" }}>
+              {callReasons.map(([id, lab]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={callReason === id ? "k-done" : "k-start"}
+                  onClick={() => setCallReason(id)}
+                >
+                  {lab}
+                </button>
+              ))}
+            </div>
             <button className="cta" onClick={() => void callStaff()}>
               Xác nhận gọi
             </button>

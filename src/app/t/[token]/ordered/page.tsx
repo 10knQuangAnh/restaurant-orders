@@ -9,6 +9,7 @@ const label: Record<string, string> = {
   queued: "Chờ bếp",
   preparing: "Đang làm",
   done: "Đã xong",
+  served: "Đã mang ra",
   "86": "Hết món",
   cancelled: "Đã hủy",
 };
@@ -20,14 +21,27 @@ export default function OrderedPage() {
   const [color, setColor] = useState("#E85D04");
 
   useEffect(() => {
-    void (async () => {
+    let stop = false;
+    async function tick() {
+      if (document.hidden) return;
       const res = await fetch(`/api/public/table/${token}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const data = (await res.json()) as { items?: unknown; ordered: OrderItem[]; tenant: { primary_color: string } };
+      if (!res.ok || stop) return;
+      const data = (await res.json()) as { ordered: OrderItem[]; tenant: { primary_color: string } };
       setItems(data.ordered || []);
       setColor(data.tenant.primary_color);
       document.documentElement.style.setProperty("--primary", data.tenant.primary_color);
-    })();
+    }
+    void tick();
+    const t = setInterval(() => void tick(), 4000);
+    const vis = () => {
+      if (!document.hidden) void tick();
+    };
+    document.addEventListener("visibilitychange", vis);
+    return () => {
+      stop = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", vis);
+    };
   }, [token]);
 
   return (

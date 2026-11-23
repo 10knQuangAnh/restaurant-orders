@@ -27,3 +27,9 @@ Per-line `vat_rate` from `tax_rates` × `items.tax_category` at insert time.
 
 ## Notifications
 `notifications` table. Kitchen `done`/`86` and guest order/call insert rows. Staff UI polls `/api/staff/inbox` (pauses when tab hidden) and beeps.
+
+## PWA / health
+`public/sw.js` registers from `RegisterSw` (network-first, no offline menu cache). `GET /api/healthz` liveness; `GET /api/readyz` runs `select 1`. Guest menu polls 8s; ordered page 4s; both pause when hidden.
+
+## Print
+Staff ticket `window.print()` + `@media print` hide nav. Thermal ESC/POS is BLOCKED-HUMAN (PRINT-01).

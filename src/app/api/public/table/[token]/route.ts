@@ -57,7 +57,7 @@ export const POST = wrap(async (request: Request, ctx) => {
       tenantId: found.tenant.id,
       kind: "call",
       tableId: found.table.id,
-      message: `${found.table.code} gọi nhân viên`,
+      message: `${found.table.code} · ${String(body.reason || "Gọi NV").slice(0, 40)}`,
     });
     return json({ ok: true });
   }

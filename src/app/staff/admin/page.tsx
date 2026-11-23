@@ -30,6 +30,7 @@ export default function AdminHome() {
   }
 
   const links = [
+    ["/staff/stock", "Kho / 86", "Nhân viên và bếp cùng sửa"],
     ["/staff/admin/menu", "Thực đơn", `${data.counts.items} món`],
     ["/staff/admin/tables", "Bàn & QR", `${data.counts.tables} bàn`],
     ["/staff/admin/staff", "Nhân viên", `${data.counts.staff} người`],

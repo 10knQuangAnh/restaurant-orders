@@ -16,3 +16,5 @@ Last verified: 2026-11-23 · Scope: bugs already paid for
 | Guest confirm 500 on name | `$3` untyped null | `nullif($1::text,'')` | guest guestName |
 | Staff 404 after guest order | PGlite per-route instance | `globalThis` singleton | session after order |
 | Login 403 csrf on `127.0.0.1` | Next `request.url` origin is `localhost` while browser Origin is `127.0.0.1` | Treat loopback hosts as equivalent; also compare `Host` | browser POST from 127.0.0.1 with Origin header |
+| GitHub compare “unrelated histories” | Cloud branch vs empty/other main | User `git merge --abort` then force-push their HEAD to main | — |
+| publish-app refuses | Needs commit **and** origin push | User pushes; agent does not wait on GitHub MCP | — |

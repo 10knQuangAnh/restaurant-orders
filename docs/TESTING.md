@@ -4,7 +4,7 @@ Last verified: 2026-11-23 · Scope: how to test
 1. `npm test` — billing vectors, KDS machine, dates, validation (`node:test`).
 2. `npm run typecheck` / `npm run lint` (tsc).
 3. `npm run test:probe` against `http://127.0.0.1:3000` (set `PROBE_URL` if needed). Needs demo seed (PGlite `npm run dev` or Postgres + `seed:demo`).
-4. Browser: `/staff?slug=quan-tu-do` pick person + PIN; `/t/t9-tu-do` guest. Waiter/kitchen `/staff/stock` + bell.
+4. Browser: `/staff?slug=quan-tu-do` pick person + PIN; `/t/t9-tu-do` guest (EN/VI, call reasons, PII consent). Waiter/kitchen `/staff/stock` + bell. Ticket **In tạm tính**. `GET /api/readyz` → `{ ready: true }`.
 
 Demo fixture (local/dev only, not printed in UI): tenant `quan-tu-do`; roles admin/waiter/kitchen. Second tenant `quan-sao-bien` shares PIN 2580 for isolation tests.
 

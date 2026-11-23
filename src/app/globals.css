@@ -44,6 +44,20 @@ img { max-width: 100%; display: block; }
   background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 92%, #fff) 0%, var(--primary) 100%);
   color: #fff;
   padding: 14px 16px 12px;
+  position: relative;
+}
+.lang-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 1px solid rgba(255,255,255,0.45);
+  background: transparent;
+  color: #fff;
+  border-radius: 999px;
+  height: 28px;
+  min-width: 44px;
+  font-size: 11px;
+  font-weight: 800;
 }
 .guest-head h1 {
   margin: 0;
@@ -285,6 +299,7 @@ img { max-width: 100%; display: block; }
 }
 .staff-top {
   padding: 14px 16px 10px; display: flex; justify-content: space-between; align-items: flex-end;
+  position: relative; z-index: 25;
 }
 .staff-top .who { font-size: 12px; color: var(--staff-muted); }
 .staff-top h1 { margin: 2px 0 0; font-size: 20px; }
@@ -319,9 +334,10 @@ img { max-width: 100%; display: block; }
 .ktix .ago { font-variant-numeric: tabular-nums; font-weight: 800; color: #b45309; }
 .ktix.late .ago { color: #dc2626; }
 .ktix .line { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px dashed #e0d0c2; font-weight: 700; }
-.kbtns { display: flex; gap: 8px; margin-top: 8px; }
+.kbtns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .kbtns button {
-  flex: 1; height: 40px; border: 0; border-radius: 10px; font-weight: 800; font-size: 13px;
+  flex: 1 1 calc(50% - 8px); min-width: 96px; height: 40px; border: 0; border-radius: 10px; font-weight: 800; font-size: 12px;
+  white-space: nowrap;
 }
 .k-start { background: #fed7aa; }
 .k-done { background: #16a34a; color: #fff; }
@@ -366,15 +382,21 @@ img { max-width: 100%; display: block; }
 }
 .staff-pick button.on { border-color: #e85d04; }
 .staff-pick button span { display: block; color: #b9a396; font-size: 12px; margin-top: 2px; }
-.inbox { position: relative; }
+.inbox { position: relative; z-index: 30; }
 .inbox-btn {
   background: #231c18; color: #f6eee6; border: 1px solid #3b2f2a; border-radius: 999px; height: 36px; min-width: 44px; font-weight: 800;
 }
 .inbox-pop {
-  position: absolute; right: 0; top: 42px; width: 260px; background: #231c18; border: 1px solid #3b2f2a; border-radius: 12px;
-  padding: 10px; z-index: 20; max-height: 50vh; overflow: auto;
+  position: absolute; right: 0; top: 42px; width: min(280px, calc(100vw - 24px)); background: #231c18; border: 1px solid #3b2f2a; border-radius: 12px;
+  padding: 10px; z-index: 40; max-height: 55vh; overflow: auto; box-shadow: 0 12px 32px rgba(0,0,0,0.45);
 }
 .inbox-item {
   display: grid; gap: 2px; width: 100%; text-align: left; background: none; border: 0; color: #f6eee6; padding: 8px 0; border-bottom: 1px solid #332924;
 }
 .inbox-item strong { font-size: 11px; text-transform: uppercase; color: #f97316; }
+
+@media print {
+  .staff-nav, .staff-top button, .kbtns, .inbox, .modal-back { display: none !important; }
+  .staff-root, .pay-box, .ticket-line { background: #fff !important; color: #000 !important; }
+  .pay-box { box-shadow: none; border: 1px solid #ccc; }
+}

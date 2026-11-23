@@ -13,6 +13,7 @@ Last verified: 2026-11-23 · Scope: operate a venue
 
 ## Demo seed
 `npm run seed:demo` refused in production. Never put PINs in UI or README.
+Empty hosted Postgres: `POST /api/platform/seed` with `x-platform-secret` (409 if tenants already exist). Local PGlite seeds on first boot.
 
 ## Incidents
 - Locked PIN: wait 15 min or admin **Đặt lại PIN** (revokes sessions).

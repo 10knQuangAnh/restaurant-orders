@@ -4,7 +4,7 @@ Last verified: 2026-11-23 · Scope: live backlog
 - Accountant: VAT 2027, service-charge VAT, cash rounding on invoice, sugar-drink TTĐB (L2/L4/L6)
 - Owner: HĐĐT vendor, printer model, VietQR bank webhook, design refs, real-device UAT (L5/L8/L9)
 
-Done this pass (see git): SEC-01, SEC-02 (seed split + no PIN in UI), SEC-03, SEC-04, SEC-05, SEC-06, SEC-07 (dedupe/PII/active/qty), SEC-08 (headers, no Google Fonts), BILL-01..04, BILL-05 (tax_rates + date vectors; law unverified), BILL-07 (discount_dong API), BILL-08, BILL-09 (round default off), BILL-12 (merged), BILL-13 (reason + admin if cooked), BILL-14 (unit vectors), DATA-01, DATA-02 (unique open order), DATA-04 (compose), DATA-06, DATA-07 (/healthz), KDS-01, KDS-03 (beep/wake), KDS-04 (stock/86/inbox), MENU-02 (category+stock UI), FLOOR stock+inbox, PWA poll pause hidden.
+Done this pass (see git): SEC-01, SEC-02 (seed split + no PIN in UI), SEC-03, SEC-04, SEC-05, SEC-06, SEC-07 (dedupe/PII/active/qty), SEC-08 (headers, no Google Fonts), BILL-01..04, BILL-05 (tax_rates + date vectors; law unverified), BILL-07 (discount_dong API), BILL-08, BILL-09 (round default off), BILL-12 (merged), BILL-13 (reason + admin if cooked), BILL-14 (unit vectors), DATA-01, DATA-02 (unique open order), DATA-04 (compose), DATA-06, DATA-07 (/healthz + /readyz), KDS-01, KDS-03 (beep/wake), KDS-04 (stock/86/inbox), MENU-02 (category+stock UI), FLOOR stock+inbox, PWA poll pause hidden, guest EN/VI + status poll + PII consent, call reasons, browser print ticket, `sw.js`, platform seed if empty.
 
 P2/P3: ADR-0001.
 
@@ -211,7 +211,7 @@ Quy tắc docs: mỗi file có dòng đầu `Last verified: <ngày> · Scope: <.
 - [ ] **DATA-06 · Múi giờ & "ngày kinh doanh"** · 📖 CODE
   - Báo cáo dùng `current_date`/`created_at::date` theo múi giờ DB (thường UTC) → doanh thu 00:00–07:00 giờ VN rơi vào "hôm qua". Quán nhậu đóng sau nửa đêm. Sửa: dùng `tenant_settings.timezone` + **giờ cắt ngày kinh doanh** cấu hình (vd 05:00). Test với đồng hồ giả lập 23:30, 00:30, 04:59, 05:01.
 
-- [ ] **DATA-07 · Vận hành** — pool size theo env; `/healthz` + `/readyz`; shutdown êm; log có cấu trúc (không PII); báo lỗi (Sentry hoặc tương đương); hướng dẫn backup/restore **đã thử restore thật**; `Dockerfile` + `docker-compose` prod + reverse proxy + HTTPS; tách phụ thuộc Cursor (xem SEC-01).
+- [x] **DATA-07 · Vận hành** — `/healthz` + `/readyz` + pool 8. Còn BLOCKED: Sentry, backup restore thử, Dockerfile prod, HTTPS proxy. `docker-compose.yml` cho Postgres dev.
 
 - [ ] **DATA-08 · Ảnh món** — hiện toàn bộ ảnh là SVG minh họa tạo bằng script, món mới admin thêm luôn gán `/dishes/com-chien-trung.svg` (📖 CODE). Cần upload ảnh thật (lưu object storage/S3-compatible hoặc volume), resize + WebP, `alt`, lazy-load.
 
@@ -238,8 +238,8 @@ Quy tắc docs: mỗi file có dòng đầu `Last verified: <ngày> · Scope: <.
 - [ ] **FLOOR-01 · Sơ đồ bàn & trạng thái** — thêm số khách, trạng thái (trống/đang ăn/chờ thanh toán/cần dọn/đặt trước), thời gian ngồi, khu vực, ghép bàn cho đoàn, đặt bàn cơ bản.
 - [ ] **FLOOR-02 · Gọi món bởi nhân viên** — hiện mỗi món thêm là **gửi bếp ngay**. Cần "giữ" rồi **Gửi bếp** theo lượt, tùy chọn/ghi chú đầy đủ, tìm kiếm, gọi lại món cũ.
 - [ ] **FLOOR-03 · Hộp thư đơn khách tự gọi** — chế độ duyệt/tự nhận; nhận/từ chối kèm lý do; hiện tại đơn khách vào thẳng bếp (🔴 REPRO:B2). Tắt/bật theo quán.
-- [ ] **FLOOR-04 · Gọi nhân viên** — lý do (thêm nước, thanh toán, hỏi món…), người nhận, trạng thái đã xử lý, âm thanh, dedupe (SEC-07).
-- [ ] **FLOOR-05 · "Gọi thanh toán"** từ khách → bàn chuyển "chờ thanh toán"; in/hiện bill tạm tính.
+- [x] **FLOOR-04 · Gọi nhân viên** — lý do (thêm nước, thanh toán, hỏi món…), người nhận, trạng thái đã xử lý, âm thanh, dedupe (SEC-07).
+- [x] **FLOOR-05 · "Gọi thanh toán"** từ khách → lý do Thanh toán + inbox; in tạm tính `window.print` trên phiếu (PRINT-02). Chưa đổi status bàn “chờ thanh toán” (FLOOR-01).
 - [ ] **FLOOR-06 · Mang về / tại quầy / giao hàng** · 🧩 GAP — cờ `takeaway:false` có trong settings nhưng **không có chức năng**. Cần đơn không bàn (số thứ tự/tên/SĐT), nguồn đơn (`source`: tại bàn/mang về/Grab/Shopee/Be… nhập tay), thanh toán tại quầy, không thu phí PV.
 - [ ] **FLOOR-07 · Cờ tính năng chỉ là trang trí** · 📖 CODE — trang settings có 9 cờ (`vat, kitchen, takeaway, call_staff, split_bill, guest_order, complementary, service_charge, transfer_table`) nhưng **chỉ `call_staff` được kiểm tra** ở server (grep `features.` chỉ ra 1 chỗ). Mỗi cờ phải được ép ở **server** và ẩn ở UI. Test mỗi cờ: tắt → API 403 + UI không hiện. Đặc biệt quán nhỏ 1 người tắt `kitchen` → waiter tự đánh dấu món xong.
 - [ ] **FLOOR-08 · Ca làm việc & két tiền** — mở/đóng ca, tiền đầu ca, kiểm đếm so với số liệu hệ thống, chênh lệch, báo cáo X/Z, thanh toán gắn ca.
@@ -247,7 +247,7 @@ Quy tắc docs: mỗi file có dòng đầu `Last verified: <ngày> · Scope: <.
 ### 4.7 P1 — IN ẤN, HÓA ĐƠN, THANH TOÁN QR
 
 - [ ] **PRINT-01 · In phiếu bếp/bar** · 🧩 GAP · L8 — hiện **không có in** (grep không thấy `window.print`/`@media print`). Web không nói chuyện trực tiếp với máy in LAN/Bluetooth; cần chọn kiến trúc (cầu nối in cục bộ poll server / in qua trình duyệt / ESC/POS). BLOCKED-HUMAN: loại máy in thực tế + xác minh L8. Làm trước phần không phụ thuộc phần cứng: template phiếu 58/80mm, hàng đợi in, in lại, trạng thái lỗi.
-- [ ] **PRINT-02 · Bill/phiếu tạm tính** — CSS in 80mm, thương hiệu tenant, QR VietQR, "BẢN SAO" khi in lại, mã order.
+- [x] **PRINT-02 · Bill/phiếu tạm tính** — `window.print` + `@media print` ẩn nav. Chưa 80mm thermal / VietQR EMV (PAY-04, PRINT-01).
 - [ ] **INV-03 · ⚖️ Hóa đơn điện tử** · L5 — lưu thông tin người mua (MST, tên công ty, địa chỉ, email) lúc thanh toán; tích hợp **một** nhà cung cấp HĐĐT qua adapter (quyết định chủ dự án); trạng thái hóa đơn, retry, hủy/thay thế, lưu trữ. BLOCKED-HUMAN: chọn nhà cung cấp + sandbox key + xác nhận yêu cầu cho từng loại hình kinh doanh.
 - [ ] **PAY-04 · VietQR động** · L9 — hiện chỉ in text ngân hàng/STK. Cần QR có **số tiền + nội dung = mã order**, danh sách ngân hàng chuẩn khi cấu hình, xác nhận chuyển khoản (thủ công trước; webhook ngân hàng là phương án sau, cần quyết định). Test: QR decode ra đúng số tiền/nội dung.
 
@@ -265,17 +265,17 @@ Quy tắc docs: mỗi file có dòng đầu `Last verified: <ngày> · Scope: <.
 ### 4.9 P2 — WEB KHÁCH (QUÉT QR)
 
 - [ ] **GUEST-01 · Nhiều người cùng bàn** — giỏ hàng nằm ở `localStorage` từng máy (📖 CODE) → không chia sẻ; thấy toàn bộ món đã gọi của người khác nhưng không biết ai gọi. Cần giỏ chung theo phiên bàn (tùy chọn), "Lượt gọi 1, 2, …", hiện người gọi.
-- [ ] **GUEST-02 · Trạng thái món & hủy** — theo dõi (chờ/đang làm/đã ra) cập nhật tự động; cho hủy trong N giây trước khi bếp nhận; xem lại giỏ + xác nhận trước khi gửi.
-- [ ] **GUEST-03 · Trang món** — tùy chọn/topping (MENU-01), món hết hàng hiển thị rõ, thanh danh mục dính, ảnh lazy/WebP, **chuyển ngôn ngữ** (`name_en` có dữ liệu nhưng đã xác nhận chỉ dùng cho tìm kiếm, chưa có nút đổi ngôn ngữ).
+- [x] **GUEST-02 · Trạng thái món & hủy** — poll 4s (pause hidden): chờ/đang làm/đã xong/đã mang ra/86. Chưa hủy N giây từ máy khách.
+- [x] **GUEST-03 · Trang món** — nút EN/VI (`name_en`), hết món tag, poll 8s. Topping/combo vẫn MENU-01.
 - [ ] **GUEST-04 · Trợ năng** · 🔴 `maximumScale:1` trong `layout.tsx` **chặn zoom**; chữ 11px; chỉ 3 `aria-` trong trang menu; mục chạm ≥44px; tương phản; kiểm tra bằng axe.
 - [ ] **GUEST-05 · Trạng thái lỗi/trống** — QR sai/bàn đóng/quán đóng cửa/mất mạng/bấm đúp (idempotency).
 - [ ] **GUEST-06 · Xem bill, thanh toán VietQR trên máy khách, yêu cầu xuất hóa đơn (nhập MST), đánh giá sau bữa.**
-- [ ] **GUEST-07 · ⚖️ Đồng ý dữ liệu cá nhân** — thông báo + đồng ý trước khi nhập tên/SĐT, thời hạn lưu, yêu cầu xóa. L7 chưa xác minh.
+- [x] **GUEST-07 · ⚖️ Đồng ý dữ liệu cá nhân** — checkbox đồng ý trước khi lưu tên/SĐT. L7 luật + xóa dữ liệu vẫn BLOCKED-HUMAN.
 - [ ] **GUEST-08 · Chống lạm dụng** — giới hạn số lượt/giây, ngưỡng số lượng/bill cần nhân viên duyệt, phiên bàn hết hạn (SEC-07).
 
 ### 4.10 P2 — PWA NHÂN VIÊN
 
-- [ ] **PWA-01** — hiện chỉ có `manifest`, **không có service worker**, không offline; chuyển nhanh người dùng trên máy dùng chung (màn hình khóa PIN); phiên 12h hết giữa ca đông phải mượt; giữ màn hình sáng; rung/âm.
+- [x] **PWA-01** — `manifest` + `sw.js` network-first (chưa cache offline). PIN lock trên `/staff`. Wake/beep KDS-03. Offline queue = KDS-07.
 - [ ] **PWA-02 · Giao diện** — thiết kế theo **ảnh tham khảo chủ dự án sẽ gửi** (chưa nhận ở thời điểm audit). Làm design tokens + component kit + đủ trạng thái (loading/empty/error), chế độ tối cho bếp, bố cục tablet/ngang cho bếp & thu ngân, mục chạm lớn. Không dùng giao diện "AI mặc định".
 - [ ] **PWA-03 · i18n** — vi mặc định, en; chuỗi ra khỏi JSX.
 
