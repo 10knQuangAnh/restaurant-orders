@@ -36,7 +36,7 @@ const kLabel: Record<string, string> = {
   queued: "chờ",
   preparing: "làm",
   done: "xong",
-  "86": "86",
+  "86": "hết",
   cancelled: "hủy",
 };
 

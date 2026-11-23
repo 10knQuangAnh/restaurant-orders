@@ -147,10 +147,18 @@ export default function KitchenPage() {
                   <button className="k-done" onClick={() => void op(ln.id, "done")}>
                     Xong
                   </button>
-                  <button className="k-86" onClick={() => void op(ln.id, "86")}>
-                    86
-                  </button>
                 </div>
+                <button
+                  type="button"
+                  className="k-quiet-link"
+                  onClick={() => {
+                    if (confirm(`Hết món “${ln.name_snapshot}”? Menu khách sẽ ẩn món này.`)) {
+                      void op(ln.id, "86");
+                    }
+                  }}
+                >
+                  Báo hết món
+                </button>
               </div>
             ))}
           </article>

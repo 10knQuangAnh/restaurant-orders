@@ -65,13 +65,17 @@ export default function StockPage() {
                   Còn: {it.stock_left == null ? "không giới hạn" : it.stock_left}
                   {it.daily_limit != null ? ` / hạn ${it.daily_limit}` : ""}
                 </div>
-                <div className="kbtns">
-                  <button className="k-86" onClick={() => void post({ itemId: it.id, sold_out: !it.sold_out })}>
-                    {it.sold_out ? "Mở bán" : "86"}
+                <div className="stock-actions">
+                  <button
+                    type="button"
+                    className="k-quiet"
+                    onClick={() => void post({ itemId: it.id, sold_out: !it.sold_out })}
+                  >
+                    {it.sold_out ? "Mở bán" : "Hết món"}
                   </button>
                   <input
                     className="field"
-                    style={{ width: 90, height: 36, margin: 0 }}
+                    style={{ width: 72, height: 40, margin: 0, flex: "none" }}
                     inputMode="numeric"
                     placeholder="SL"
                     value={qty[it.id] ?? ""}
@@ -79,6 +83,7 @@ export default function StockPage() {
                   />
                   <button
                     className="k-start"
+                    type="button"
                     onClick={() => {
                       const n = qty[it.id] === "" ? null : Number(qty[it.id]);
                       void post({ itemId: it.id, stock_left: n });

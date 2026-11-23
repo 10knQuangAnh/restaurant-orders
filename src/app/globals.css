@@ -339,9 +339,28 @@ img { max-width: 100%; display: block; }
   flex: 1 1 calc(50% - 8px); min-width: 96px; height: 40px; border: 0; border-radius: 10px; font-weight: 800; font-size: 12px;
   white-space: nowrap;
 }
-.k-start { background: #fed7aa; }
+.k-start { background: #fed7aa; color: #1a120c; }
 .k-done { background: #16a34a; color: #fff; }
 .k-86 { background: #1c1917; color: #fff; }
+.k-quiet {
+  height: 40px; padding: 0 12px; border: 1px solid #3b2f2a; border-radius: 10px;
+  background: transparent; color: #d6c4b8; font-weight: 700; font-size: 12px; flex: none;
+}
+.k-quiet-link {
+  display: block; width: 100%; margin-top: 4px; padding: 4px 0 8px;
+  background: none; border: 0; color: #7a5c4c; font-size: 12px; font-weight: 700; text-align: left;
+}
+.stock-actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.stock-actions .k-start {
+  flex: 1; height: 40px; border: 0; border-radius: 10px; font-weight: 800; font-size: 12px;
+}
+.stock-actions .k-quiet { flex: none; }
+.cat-card { border: 1px solid #ead9c8 !important; box-shadow: 0 1px 0 rgba(26, 18, 12, 0.06); }
+.cat-rename { display: flex; gap: 8px; align-items: stretch; margin-top: 12px; }
+.cat-rename input { margin-top: 0; }
+.cat-rename .k-start {
+  flex: none; height: auto; padding: 0 14px; border: 0; border-radius: 10px; font-weight: 800;
+}
 
 .ticket-line { padding: 10px 0; border-bottom: 1px solid #332924; }
 .pay-box { background: var(--staff-card); margin: 12px; border-radius: 14px; padding: 14px; }

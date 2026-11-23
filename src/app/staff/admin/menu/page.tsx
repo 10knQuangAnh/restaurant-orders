@@ -3,6 +3,7 @@
 import { StaffNav } from "@/components/staff/Nav";
 import { formatVnd } from "@/lib/money";
 import type { Category, MenuItem, Tenant } from "@/lib/types";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -57,9 +58,6 @@ export default function AdminMenu() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [form, setForm] = useState<Form>(emptyForm());
-  const [catName, setCatName] = useState("");
-  const [rename, setRename] = useState<Record<string, string>>({});
-  const [moveTo, setMoveTo] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState("");
 
   async function load() {
@@ -91,9 +89,7 @@ export default function AdminMenu() {
     const data = (await res.json()) as { error?: string; url?: string; itemId?: string };
     if (!res.ok) {
       setMsg(
-        data.error === "need_move"
-          ? "Chọn danh mục để chuyển món trước khi xóa."
-          : data.error === "bad_image"
+        data.error === "bad_image"
             ? "Ảnh không hợp lệ (JPEG/PNG, dưới 900KB)."
             : "Không lưu được.",
       );
@@ -118,58 +114,12 @@ export default function AdminMenu() {
       <header className="staff-top">
         <div>
           <div className="who">Thực đơn · {tenant?.name || ""}</div>
-          <h1>Món & danh mục</h1>
+          <h1>Món</h1>
         </div>
+        <Link className="linkish" href="/staff/admin/categories">
+          Danh mục ›
+        </Link>
       </header>
-
-      <section className="admin-card">
-        <b>Danh mục</b>
-        {categories.map((c) => (
-          <div className="cat-edit" key={c.id}>
-            <input
-              value={rename[c.id] ?? c.name}
-              onChange={(e) => setRename((r) => ({ ...r, [c.id]: e.target.value }))}
-            />
-            <button
-              className="linkish"
-              type="button"
-              onClick={() => void post({ action: "save_category", id: c.id, name: rename[c.id] ?? c.name })}
-            >
-              Đổi tên
-            </button>
-            <select value={moveTo[c.id] || ""} onChange={(e) => setMoveTo((m) => ({ ...m, [c.id]: e.target.value }))}>
-              <option value="">Chuyển món sang…</option>
-              {categories.filter((x) => x.id !== c.id).map((x) => (
-                <option key={x.id} value={x.id}>{x.name}</option>
-              ))}
-            </select>
-            <button
-              className="linkish"
-              type="button"
-              onClick={() => {
-                if (!confirm(`Xóa nhóm “${c.name}”? Món sẽ chuyển nếu bạn đã chọn nhóm khác.`)) return;
-                void post({ action: "delete_category", id: c.id, moveTo: moveTo[c.id] });
-              }}
-            >
-              Xóa
-            </button>
-          </div>
-        ))}
-        <div className="cat-edit" style={{ marginTop: 8 }}>
-          <input placeholder="Tên nhóm mới" value={catName} onChange={(e) => setCatName(e.target.value)} />
-          <button
-            className="cta"
-            type="button"
-            style={{ width: "auto", padding: "0 14px", height: 40 }}
-            onClick={() => {
-              if (!catName.trim()) return;
-              void post({ action: "save_category", name: catName.trim() }).then(() => setCatName(""));
-            }}
-          >
-            Thêm nhóm
-          </button>
-        </div>
-      </section>
 
       <section className="admin-card">
         <b>{form.id ? "Sửa món" : "Thêm món"}</b>
@@ -250,7 +200,7 @@ export default function AdminMenu() {
                   Sửa
                 </button>
                 <button className="linkish" type="button" onClick={() => void post({ action: "toggle_sold_out", itemId: it.id })}>
-                  {it.sold_out ? "Mở bán" : "86"}
+                  {it.sold_out ? "Mở bán" : "Hết món"}
                 </button>
               </div>
             </div>

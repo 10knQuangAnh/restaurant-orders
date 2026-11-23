@@ -30,8 +30,9 @@ export default function AdminHome() {
   }
 
   const links = [
-    ["/staff/stock", "Kho / 86", "Nhân viên và bếp cùng sửa"],
+    ["/staff/stock", "Kho", "Còn lại / hết món"],
     ["/staff/admin/menu", "Thực đơn", `${data.counts.items} món`],
+    ["/staff/admin/categories", "Danh mục", "Nhóm món trên menu"],
     ["/staff/admin/tables", "Bàn & QR", `${data.counts.tables} bàn`],
     ["/staff/admin/staff", "Nhân viên", `${data.counts.staff} người`],
     ["/staff/admin/settings", "VAT / phí / cờ", `VAT ${Math.round(Number(data.settings.vat_rate) * 100)}%`],
