@@ -58,12 +58,13 @@ export function runtimePostgresUrl(env = process.env) {
   );
 }
 
-export function migratePostgresUrl() {
+export function migratePostgresUrl(env = process.env) {
   return usablePostgresUrl(
-    process.env.DATABASE_URL_UNPOOLED,
-    process.env.POSTGRES_URL_NON_POOLING,
-    process.env.DATABASE_URL,
-    process.env.POSTGRES_URL,
+    env.DATABASE_URL_UNPOOLED,
+    env.POSTGRES_URL_NON_POOLING,
+    env.DATABASE_URL,
+    env.POSTGRES_URL,
+    env.POSTGRES_PRISMA_URL,
   );
 }
 

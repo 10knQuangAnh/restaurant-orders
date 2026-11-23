@@ -3,9 +3,13 @@ import pg from "pg";
 import { migratePostgresUrl, pgClientSsl } from "../src/lib/postgresUrl.mjs";
 
 const url = migratePostgresUrl();
-const files = (await readdir("migrations").catch(() => []))
-  .filter((f) => f.endsWith(".sql"))
-  .sort();
+if (!url && (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production")) {
+  console.error(
+    "migrate: production requires a valid PostgreSQL connection URL; configure the project's database before deploying",
+  );
+  process.exit(1);
+}
+const files = (await readdir("migrations").catch(() => [])).filter((f) => f.endsWith(".sql")).sort();
 if (!url || files.length === 0) {
   const raw = (process.env.DATABASE_URL || process.env.POSTGRES_URL || "").trim();
   if (!url && raw) {
@@ -39,9 +43,7 @@ try {
   await client.query(
     "create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())",
   );
-  const done = new Set(
-    (await client.query("select name from schema_migrations")).rows.map((r) => r.name),
-  );
+  const done = new Set((await client.query("select name from schema_migrations")).rows.map((r) => r.name));
   for (const file of files.filter((f) => !done.has(f))) {
     await client.query("begin");
     try {

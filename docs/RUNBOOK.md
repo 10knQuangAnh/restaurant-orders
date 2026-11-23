@@ -19,6 +19,8 @@ Production requires a valid PostgreSQL URL (`DATABASE_URL`, `POSTGRES_URL`, `POS
 
 After deploying this audit's changes, verify readiness, staff login and a test order in a test venue. Order mutations acquire a short tenant row lock inside the transaction to serialize conflicting open/pay/transfer/split/kitchen actions; load testing for very large venues remains separate from functional testing.
 
+Production migration now exits with a failure when no usable PostgreSQL URL is configured, so a missing/placeholder URL cannot produce a successful production build. Run `PROBE_URL=https://… PROBE_SLUG=… npm run test:deployment` after deployment; Vercel's successful build status alone is not the readiness check.
+
 ## New restaurant from JSON
 Template: `seeds/templates/quan-sample.json` (slug, PIN, tables, categories, items). Copy and edit.
 

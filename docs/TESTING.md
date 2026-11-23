@@ -29,6 +29,14 @@ TEST_DATABASE_URL=postgres://… npm run test:database
 
 Evidence and remaining limits: [2026-11-23 audit](TEST-AUDIT-2026-11-23.md).
 
+Verify a deployment without modifying its business data:
+
+```bash
+PROBE_URL=https://your-deployment.example PROBE_SLUG=your-venue npm run test:deployment
+```
+
+This checks readiness, directory, guest menu, unauthenticated access controls and mobile browser rendering. It must pass against the actual deployed URL after the deployment reports success.
+
 Demo fixture (local/dev only, not printed in UI): tenant `quan-tu-do`; roles admin/waiter/kitchen. Second tenant `quan-sao-bien` shares PIN 2580 for isolation tests.
 
 ## Probe expect (fixed)

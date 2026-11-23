@@ -4,7 +4,13 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { bundledSql } from "../src/lib/bundledSql.ts";
-import { normalizePostgresUrl, pgClientSsl, runtimePostgresUrl, usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
+import {
+  migratePostgresUrl,
+  normalizePostgresUrl,
+  pgClientSsl,
+  runtimePostgresUrl,
+  usablePostgresUrl,
+} from "../src/lib/postgresUrl.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -44,9 +50,16 @@ describe("normalizePostgresUrl", () => {
 
 describe("runtime Postgres configuration", () => {
   const connection = "postgres://test:password@localhost:5432/test";
-  for (const key of ["DATABASE_URL", "POSTGRES_URL", "POSTGRES_PRISMA_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING"]) {
+  for (const key of [
+    "DATABASE_URL",
+    "POSTGRES_URL",
+    "POSTGRES_PRISMA_URL",
+    "DATABASE_URL_UNPOOLED",
+    "POSTGRES_URL_NON_POOLING",
+  ]) {
     it(`accepts ${key} when it is the only configured connection`, () => {
       assert.equal(runtimePostgresUrl({ [key]: connection }), connection);
+      assert.equal(migratePostgresUrl({ [key]: connection }), connection);
     });
   }
   it("prefers a usable pooled URL and ignores placeholders", () => {
@@ -73,11 +86,31 @@ describe("pgClientSsl", () => {
 });
 
 describe("migrate.mjs", () => {
+  it("rejects a production deployment with an invalid database configuration", () => {
+    const run = spawnSync(process.execPath, ["scripts/migrate.mjs"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        VERCEL_ENV: "production",
+        DATABASE_URL: "POSTGRES_URL",
+        POSTGRES_URL: "",
+        POSTGRES_PRISMA_URL: "",
+        POSTGRES_URL_NON_POOLING: "",
+        DATABASE_URL_UNPOOLED: "",
+      },
+      encoding: "utf8",
+    });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /production requires a valid PostgreSQL connection URL/);
+    assert.doesNotMatch(run.stderr, /ENOTFOUND/);
+  });
   it("exits 0 when DATABASE_URL is the dummy pg host", () => {
     const r = spawnSync(process.execPath, ["scripts/migrate.mjs"], {
       cwd: root,
       env: {
         ...process.env,
+        NODE_ENV: "test",
+        VERCEL_ENV: "development",
         DATABASE_URL: "POSTGRES_URL",
         POSTGRES_URL: "",
         POSTGRES_URL_NON_POOLING: "",
