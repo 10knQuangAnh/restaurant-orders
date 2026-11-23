@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { bundledSql } from "../src/lib/bundledSql.ts";
-import { normalizePostgresUrl, pgClientSsl, usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
+import { normalizePostgresUrl, pgClientSsl, runtimePostgresUrl, usablePostgresUrl } from "../src/lib/postgresUrl.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -39,6 +39,21 @@ describe("normalizePostgresUrl", () => {
   it("skips a bad candidate then uses POSTGRES_URL", () => {
     const real = "postgres://u:p@ep-x.neon.tech/neondb";
     assert.equal(usablePostgresUrl("POSTGRES_URL", real), real);
+  });
+});
+
+describe("runtime Postgres configuration", () => {
+  const connection = "postgres://test:password@localhost:5432/test";
+  for (const key of ["DATABASE_URL", "POSTGRES_URL", "POSTGRES_PRISMA_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING"]) {
+    it(`accepts ${key} when it is the only configured connection`, () => {
+      assert.equal(runtimePostgresUrl({ [key]: connection }), connection);
+    });
+  }
+  it("prefers a usable pooled URL and ignores placeholders", () => {
+    const pooled = "postgres://test:password@pool.example.com/test";
+    assert.equal(runtimePostgresUrl({ DATABASE_URL: pooled, DATABASE_URL_UNPOOLED: connection }), pooled);
+    assert.equal(runtimePostgresUrl({ DATABASE_URL: "POSTGRES_URL", DATABASE_URL_UNPOOLED: connection }), connection);
+    assert.equal(runtimePostgresUrl({}), "");
   });
 });
 

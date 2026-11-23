@@ -25,6 +25,8 @@ Errors: `{ error: code }` with 400/401/403/404/409/429. Write requests with fore
 
 Audit clarifications (2026-11-23):
 
+- Production without a usable PostgreSQL URL returns 503 `database_unconfigured` on database-backed APIs. Readiness includes `reason: database_unconfigured` or `database_unavailable` without exposing connection strings.
+
 - PIN is a string of 4–8 digits. Malformed login fields return 400; concurrent failed attempts count toward the same lockout.
 - Bodies must be JSON objects. Order batches must contain 1–100 valid lines, each with integer quantity 1–99 and matching item/unit IDs. Invalid lines reject the whole batch. Quantity zero is rejected; cancellation uses `cancel: true` plus a reason.
 - Finite stock is reserved atomically for guest/staff adds and positive quantity changes; negative quantity deltas and cancellation restore stock once.

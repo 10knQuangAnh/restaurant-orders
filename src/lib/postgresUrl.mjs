@@ -48,8 +48,14 @@ export function usablePostgresUrl(...candidates) {
   return "";
 }
 
-export function runtimePostgresUrl() {
-  return usablePostgresUrl(process.env.DATABASE_URL, process.env.POSTGRES_URL, process.env.POSTGRES_PRISMA_URL);
+export function runtimePostgresUrl(env = process.env) {
+  return usablePostgresUrl(
+    env.DATABASE_URL,
+    env.POSTGRES_URL,
+    env.POSTGRES_PRISMA_URL,
+    env.DATABASE_URL_UNPOOLED,
+    env.POSTGRES_URL_NON_POOLING,
+  );
 }
 
 export function migratePostgresUrl() {

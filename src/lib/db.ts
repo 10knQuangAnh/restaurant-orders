@@ -5,6 +5,7 @@ import pg from "pg";
 import { bundledSql } from "./bundledSql";
 import { hashPin } from "./pin";
 import { pgClientSsl, runtimePostgresUrl } from "./postgresUrl.mjs";
+import { ApiError } from "./http";
 
 const databaseUrl = runtimePostgresUrl();
 
@@ -112,7 +113,7 @@ async function bootLocal() {
 
 function boot(): Promise<void> {
   if (!databaseUrl && process.env.NODE_ENV === "production") {
-    return Promise.reject(new Error("Production requires a persistent PostgreSQL database"));
+    return Promise.reject(new ApiError(503, "database_unconfigured"));
   }
   g.__printOrderBoot ??= (databaseUrl ? bootPostgres(databaseUrl) : bootLocal()).catch((error: unknown) => {
     g.__printOrderBoot = undefined;
