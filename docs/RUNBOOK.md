@@ -21,6 +21,13 @@ After deploying this audit's changes, verify readiness, staff login and a test o
 
 Production migration now exits with a failure when no usable PostgreSQL URL is configured, so a missing/placeholder URL cannot produce a successful production build. Run `PROBE_URL=https://… PROBE_SLUG=… npm run test:deployment` after deployment; Vercel's successful build status alone is not the readiness check.
 
+## Vercel production database (2026-11-23)
+
+- Project: `qa-3958/restaurant-orders`; Neon Free resource: `restaurant-orders-db`, Singapore (`sin1`), connected to Production. Connection values are managed by the integration, never committed.
+- `vercel.json` places functions in `sin1` alongside the database.
+- The previous invalid manually entered `DATABASE_URL` was removed from Production targets and retained unchanged in Preview. Preview needs its own valid database connection before it can run; do not connect production data to preview casually.
+- Initial demo data was loaded once in a transaction after verifying the new database had zero tenants. Subsequent deployments keep PostgreSQL data and do not automatically reapply seeds.
+
 ## New restaurant from JSON
 Template: `seeds/templates/quan-sample.json` (slug, PIN, tables, categories, items). Copy and edit.
 
