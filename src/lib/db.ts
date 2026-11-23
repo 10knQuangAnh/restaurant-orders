@@ -6,6 +6,7 @@ import { bundledSql } from "./bundledSql";
 import { hashPin } from "./pin";
 import { pgClientSsl, runtimePostgresUrl } from "./postgresUrl.mjs";
 import { ApiError } from "./http";
+import { migratePool } from "./migratePool.mjs";
 
 const databaseUrl = runtimePostgresUrl();
 
@@ -46,37 +47,6 @@ async function hashPlainPins(q: QueryFn) {
   }
 }
 
-async function migratePool(pool: pg.Pool) {
-  const client = await pool.connect();
-  try {
-    await client.query("select pg_advisory_lock(7272741)");
-    await client.query(
-      "create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())",
-    );
-    const done = new Set(
-      (await client.query("select name from schema_migrations")).rows.map((row: { name: string }) => row.name),
-    );
-    for (const file of await loadSql("migrations")) {
-      if (done.has(file.name)) continue;
-      await client.query("begin");
-      try {
-        await client.query(file.sql);
-        await client.query("insert into schema_migrations (name) values ($1)", [file.name]);
-        await client.query("commit");
-      } catch (error) {
-        await client.query("rollback");
-        throw error;
-      }
-    }
-  } finally {
-    try {
-      await client.query("select pg_advisory_unlock(7272741)");
-    } finally {
-      client.release();
-    }
-  }
-}
-
 async function bootPostgres(url: string) {
   const pool = new pg.Pool({
     connectionString: url,
@@ -84,16 +54,22 @@ async function bootPostgres(url: string) {
     ssl: pgClientSsl(url),
     connectionTimeoutMillis: 10_000,
   });
-  g.__printOrderPool = pool;
-  await migratePool(pool);
-  const counted = await pool.query(`select count(*)::int as c from tenants`);
-  if (Number(counted.rows[0]?.c || 0) === 0 && demoSeedEnabled()) {
-    for (const file of await loadSql("seeds")) {
-      await pool.query(file.sql);
+  pool.on("error", () => console.error("database_pool_error"));
+  try {
+    await migratePool(pool, await loadSql("migrations"));
+    const counted = await pool.query(`select count(*)::int as c from tenants`);
+    if (Number(counted.rows[0]?.c || 0) === 0 && demoSeedEnabled()) {
+      for (const file of await loadSql("seeds")) {
+        await pool.query(file.sql);
+      }
     }
+    const q: QueryFn = async (text, params = []) => (await pool.query(text, params)).rows as never;
+    await hashPlainPins(q);
+    g.__printOrderPool = pool;
+  } catch (error) {
+    await pool.end().catch(() => {});
+    throw error;
   }
-  const q: QueryFn = async (text, params = []) => (await pool.query(text, params)).rows as never;
-  await hashPlainPins(q);
 }
 
 async function bootLocal() {

@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import pg from "pg";
 import { migratePostgresUrl, pgClientSsl } from "../src/lib/postgresUrl.mjs";
+import { migratePool } from "../src/lib/migratePool.mjs";
 
 const url = migratePostgresUrl();
 if (!url && (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production")) {
@@ -22,40 +23,13 @@ if (!url || files.length === 0) {
   process.exit(0);
 }
 
-const client = new pg.Client({ connectionString: url, ssl: pgClientSsl(url) });
+const pool = new pg.Pool({ connectionString: url, ssl: pgClientSsl(url), max: 1, connectionTimeoutMillis: 10_000 });
 try {
-  await client.connect();
-} catch (error) {
-  const err = error;
-  const hostname = err && typeof err === "object" && "hostname" in err ? String(err.hostname || "") : "";
-  if (err && typeof err === "object" && err.code === "ENOTFOUND" && (hostname === "base" || !hostname.includes("."))) {
-    console.log(
-      `migrate: skip — cannot resolve Postgres host “${hostname || "?"}”. Use a full postgres:// URL whose host has a domain (e.g. ep-xxx.neon.tech).`,
-    );
-    process.exit(0);
-  }
-  throw error;
-}
-
-try {
-  await client.query("set lock_timeout = '60s'");
-  await client.query("select pg_advisory_lock(7272741)");
-  await client.query(
-    "create table if not exists schema_migrations (name text primary key, applied_at timestamptz not null default now())",
+  await migratePool(
+    pool,
+    await Promise.all(files.map(async (name) => ({ name, sql: await readFile(`migrations/${name}`, "utf8") }))),
   );
-  const done = new Set((await client.query("select name from schema_migrations")).rows.map((r) => r.name));
-  for (const file of files.filter((f) => !done.has(f))) {
-    await client.query("begin");
-    try {
-      await client.query(await readFile(`migrations/${file}`, "utf8"));
-      await client.query("insert into schema_migrations (name) values ($1)", [file]);
-      await client.query("commit");
-      console.log(`migrate: applied ${file}`);
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    }
-  }
+  console.log(`migrate: verified ${files.length} schema migrations`);
 } finally {
-  await client.end();
+  await pool.end();
 }

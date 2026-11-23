@@ -37,6 +37,14 @@ PROBE_URL=https://your-deployment.example PROBE_SLUG=your-venue npm run test:dep
 
 This checks readiness, directory, guest menu, unauthenticated access controls and mobile browser rendering. It must pass against the actual deployed URL after the deployment reports success.
 
+For writes on a real deployment, create a separate `qa-live-*` venue from the tenant template with three staff roles and random PINs saved in a private JSON file, then run:
+
+```bash
+PROBE_URL=https://your-deployment.example QA_SPEC_FILE=/private/path/qa-spec.json npm run test:live-ops
+```
+
+This tests real logins, role isolation, concurrent calls/orders/payments, finite stock, kitchen transitions, guest cancellation, split/transfer/merge, discounts, QR PNG, reports and mobile guest-to-cash-checkout. It refuses venue slugs outside `qa-live-*`. Remove only that test venue and its dependent rows afterward; keep demo/business venues unchanged.
+
 Demo fixture (local/dev only, not printed in UI): tenant `quan-tu-do`; roles admin/waiter/kitchen. Second tenant `quan-sao-bien` shares PIN 2580 for isolation tests.
 
 ## Probe expect (fixed)

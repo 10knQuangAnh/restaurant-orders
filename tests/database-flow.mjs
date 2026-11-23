@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import pg from "pg";
 import { spawnSync } from "node:child_process";
+import { migratePool } from "../src/lib/migratePool.mjs";
+import { pgClientSsl } from "../src/lib/postgresUrl.mjs";
 
 assert.ok(process.env.TEST_DATABASE_URL, "Use an isolated TEST_DATABASE_URL");
 for (let attempt = 0; attempt < 2; attempt++) {
@@ -16,6 +18,17 @@ for (let attempt = 0; attempt < 2; attempt++) {
   assert.equal(run.status, 0, run.stderr);
 }
 console.log("PASS migration CLI can run twice against PostgreSQL");
+const pool = new pg.Pool({
+  connectionString: process.env.TEST_DATABASE_URL,
+  ssl: pgClientSsl(process.env.TEST_DATABASE_URL),
+  max: 5,
+});
+try {
+  await Promise.all(Array.from({ length: 5 }, () => migratePool(pool, [])));
+  console.log("PASS concurrent transaction-pooled schema bootstrap");
+} finally {
+  await pool.end();
+}
 const client = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
 await client.connect();
 try {

@@ -18,7 +18,8 @@
     "test:database": "node tests/database-flow.mjs",
     "test:platform": "node tests/platform-flow.mjs",
     "test:directory": "node tests/directory-browser.mjs",
-    "test:deployment": "node tests/deployment-smoke.mjs"
+    "test:deployment": "node tests/deployment-smoke.mjs",
+    "test:live-ops": "node tests/live-ops.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",

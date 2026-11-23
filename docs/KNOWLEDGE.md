@@ -27,3 +27,10 @@ Last verified: 2026-11-23 · Scope: bugs already paid for
 - Serverless instances could wait indefinitely on migration: runtime returned a connection holding `pg_advisory_lock` to its pool. Explicitly unlock in `finally` before releasing the client; test lock availability after boot.
 - API success in isolated unit tests did not cover concurrent request races. Reproduce on disposable PostgreSQL; stock reservation, kitchen/cancellation/payment and failed-PIN updates must validate under transaction locks.
 - Do not run mutation suites concurrently on shared demo fixtures: an operations test can pay the order another probe is inspecting. Run suites sequentially and generate separate tables.
+
+## Neon pooled bootstrap — 2026-11-23
+
+- Reproduced on Vercel/Neon: initial readiness/menu passed, but concurrent payments timed out. PostgreSQL showed one held bootstrap advisory lock and another waiting connection.
+- Neon uses transaction pooling and does not support session advisory locks. An explicit session unlock can run on a different backend and leave the original lock held. See [Neon pooling limitations](https://neon.com/docs/connect/connection-pooling#connection-pooling-in-transaction-mode).
+- Runtime and migration CLI now share a single transaction with `pg_advisory_xact_lock`, a transaction-local lock timeout and rollback/release on error. Failed runtime boot closes its pool before retrying.
+- Regressions: `tests/migration-pool.test.ts`, concurrent bootstrap in `test:database`, and `test:live-ops` against a separate temporary QA venue.
